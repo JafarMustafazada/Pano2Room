@@ -79,9 +79,9 @@ RUN . ${CONDA_DIR}/etc/profile.d/conda.sh \
     # && (pip --no-cache-dir install /workspace/simple-knn --no-build-isolation || echo "!! simple-knn build failed") \
     # && (pip --no-cache-dir install /workspace/diff-gaussian-rasterization-w-depth --no-build-isolation || echo "!! diff-gauss build failed") \
     # && (pip --no-cache-dir install /workspace/detectron2 --no-build-isolation || echo "!! detectron2 build failed")
-    && (pip --no-cache-dir install 'git+https://github.com/facebookresearch/detectron2.git' --no-build-isolation || echo "!! detectron2 build failed") \
-    && (pip --no-cache-dir install 'git+https://github.com/facebookresearch/detectron2.git' --no-build-isolation || echo "!! detectron2 build failed") \
-    && (pip --no-cache-dir install 'git+https://github.com/facebookresearch/detectron2.git' --no-build-isolation || echo "!! detectron2 build failed") \
+    && (pip --no-cache-dir install 'git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch' --no-build-isolation || echo "!! tiny-cuda-nn build failed") \\
+    && (pip --no-cache-dir install 'git+https://github.com/camenduru/simple-knn.git' --no-build-isolation || echo "!! detectron2 build failed") \
+    && (pip --no-cache-dir install 'git+https://github.com/JonathonLuiten/diff-gaussian-rasterization-w-depth.git' --no-build-isolation || echo "!! detectron2 build failed") \
     && (pip --no-cache-dir install 'git+https://github.com/facebookresearch/detectron2.git' --no-build-isolation || echo "!! detectron2 build failed")
 
 # Clean up conda caches and package caches to reduce final size
