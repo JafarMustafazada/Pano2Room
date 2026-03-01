@@ -1,0 +1,73 @@
+# Exclude large project and data directories
+# Pano2Room
+saves
+
+# Exclude symbolic links and reparse points that cause Docker issues
+**/configs
+
+# Python cache and compiled files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+*.whl
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+
+# Logs
+*.log
+logs
+
+# Test files
+tests
+test
+*_test.py
+test_*.py
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Large data directories within packages
+**/data
+**/datasets
+**/checkpoints
+**/models
+**/weights
+**/outputs
+**/results
+**/runs
+
+# Build artifacts in package directories
+**/build
+**/dist
+**/*.egg-info
+
+# Documentation in packages
+**/docs
+**/examples
+**/demo
+
+# Git in packages
+**/.git

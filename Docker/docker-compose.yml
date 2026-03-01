@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  pano2room:
+    image: pano2room:v2.2
+    tty: true
+    stdin_open: true
+    container_name: pano2room-runner
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - DEV_MODE=0
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./Pano2Room:/home/pano/workspace/Pano2Room
+      - ./docker_entrypoint.sh:/usr/local/bin/docker_entrypoint.sh
+      - ./cached:/home/pano/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

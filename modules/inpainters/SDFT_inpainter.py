@@ -10,7 +10,7 @@ class SDFTInpainter(Inpainter):
     def __init__(self, subset_name=None):
         super().__init__()
 
-        SD_path = "stabilityai/stable-diffusion-2-inpainting"
+        SD_path = "sd2-community/stable-diffusion-2-inpainting"
         pipe = StableDiffusionInpaintPipeline.from_pretrained(SD_path, torch_dtype=torch.float16, variant="fp16").to("cuda")
 
         SDFT_path = f"output/SDFT_weights"

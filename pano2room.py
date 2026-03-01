@@ -36,6 +36,67 @@ from utils.graphics import focal2fov
 from utils.loss import l1_loss, ssim
 from random import randint
 
+
+# ----------------- colored export: write PLY (and optional GLB) -----------------
+from plyfile import PlyElement, PlyData
+
+def _to_np(x):
+    try:
+        import torch
+        if isinstance(x, torch.Tensor):
+            return x.detach().cpu().numpy()
+    except Exception:
+        pass
+    return np.asarray(x)
+
+def bilinear_sample_uint8(img_uint8, px, py):
+    """img_uint8: HxWx3 uint8; px,py: arrays of float pixel coords. wrap horizontally."""
+    H, W, C = img_uint8.shape
+    px_wrapped = np.mod(px, W)
+    py_clamped = np.clip(py, 0, H - 1)
+    x0 = np.floor(px_wrapped).astype(np.int64)
+    x1 = (x0 + 1) % W
+    y0 = np.floor(py_clamped).astype(np.int64)
+    y1 = np.clip(y0 + 1, 0, H - 1)
+    wx = px_wrapped - x0
+    wy = py_clamped - y0
+    c00 = img_uint8[y0, x0, :].astype(np.float32)
+    c10 = img_uint8[y0, x1, :].astype(np.float32)
+    c01 = img_uint8[y1, x0, :].astype(np.float32)
+    c11 = img_uint8[y1, x1, :].astype(np.float32)
+    c0 = c00 * (1 - wx)[:,None] + c10 * (wx)[:,None]
+    c1 = c01 * (1 - wx)[:,None] + c11 * (wx)[:,None]
+    c = c0 * (1 - wy)[:,None] + c1 * (wy)[:,None]
+    return c  # float32
+
+def project_world_to_image(points_world, cam2world, fovx_rad, imgW, imgH):
+    """
+    points_world: (N,3) numpy
+    cam2world: 4x4 numpy (camera-to-world Pc2w)
+    returns: px, py, depth_z_cam, mask_visible
+    """
+    # compute world -> camera transform
+    world2cam = np.linalg.inv(cam2world)  # 4x4
+    N = points_world.shape[0]
+    hom = np.concatenate([points_world, np.ones((N,1), dtype=np.float32)], axis=1).T  # 4xN
+    cam_coords = (world2cam @ hom)[:3,:].T  # N x 3
+    # camera coords: x right, y up, z forward (depending on conventions). We assume z>0 in front of camera.
+    z = cam_coords[:,2]
+    # compute focal from fovx: f = (W/2) / tan(fovx/2)
+    f = (imgW * 0.5) / np.tan(fovx_rad * 0.5)
+    cx = imgW * 0.5
+    cy = imgH * 0.5
+    x = cam_coords[:,0]
+    y = cam_coords[:,1]
+    # project to pixels
+    px = (f * (x / (z + 1e-12))) + cx
+    py = (f * (y / (z + 1e-12))) + cy
+    # visible mask: z > 1e-4 and px in [0,W) and py in [0,H)
+    vis = (z > 1e-4) & (px >= 0) & (px < imgW) & (py >= 0) & (py < imgH)
+    return px, py, z, vis
+
+
+
 @torch.no_grad()
 class Pano2RoomPipeline(torch.nn.Module):
     def __init__(self, attempt_idx=""):
@@ -438,6 +499,7 @@ class Pano2RoomPipeline(torch.nn.Module):
 
             if self.save_details:
                 if iteration % 200 == 0:
+                    print("[PANOPROG] iter =", iteration, "/ 3000")
                     functions.write_image(f"{self.save_path}/Train_Ref_rgb_{iteration}.png", gt_image.squeeze(0).permute(1,2,0).detach().cpu().numpy().clip(0,1)*255.)
                     functions.write_image(f"{self.save_path}/Train_GS_rgb_{iteration}.png", render_image.squeeze(0).permute(1,2,0).detach().cpu().numpy().clip(0,1)*255.)
 
@@ -461,6 +523,7 @@ class Pano2RoomPipeline(torch.nn.Module):
                 # Optimizer step
                 if iteration < self.opt.iterations:
                     self.gaussians.optimizer.step()
+                    # self._pano2room_progress_tick(loss=None, print_every=50)
                     self.gaussians.optimizer.zero_grad(set_to_none = True)
 
     def eval_GS(self, eval_GS_cams):
@@ -564,7 +627,10 @@ class Pano2RoomPipeline(torch.nn.Module):
 
         self.scene = Scene(traindata, self.gaussians, self.opt)   
         self.train_GS()
+
+        # gaussian-only export
         outfile = self.gaussians.save_ply(os.path.join(self.save_path, '3DGS.ply'))
+        print(f"[pano2room] gaussian PLY written to: {outfile}")
 
         # Eval GS
         evaldata = {
@@ -600,6 +666,64 @@ class Pano2RoomPipeline(torch.nn.Module):
         from scene.dataset_readers import loadCamerasFromData
         eval_GS_cams = loadCamerasFromData(evaldata, self.opt.white_background)
         self.eval_GS(eval_GS_cams)
+
+
+        
+
+    def _pano2room_progress_tick(self, loss=None, print_every=50):
+        # init bookkeeping on self
+        if not hasattr(self, "_p2r_prog_iter"):
+            self._p2r_prog_iter = 0
+            self._p2r_prog_start = time.time()
+            self._p2r_prog_last = self._p2r_prog_start
+            self._p2r_prog_avg_dt = None
+            # try to discover a configured total (best-effort)
+            self._p2r_total = None
+            for cand in ('max_iters','max_steps','n_iters','num_iters','train_steps','total_steps','n_iter'):
+                try:
+                    val = getattr(self, cand, None)
+                    if isinstance(val, int) and val > 0:
+                        self._p2r_total = val
+                        break
+                except Exception:
+                    pass
+
+        # increment counter
+        self._p2r_prog_iter += 1
+        now = time.time()
+        dt = max(1e-9, now - getattr(self, "_p2r_prog_last", now))
+        self._p2r_prog_last = now
+
+        # moving-average step time
+        if getattr(self, "_p2r_prog_avg_dt", None) is None:
+            self._p2r_prog_avg_dt = dt
+        else:
+            alpha = 0.08
+            self._p2r_prog_avg_dt = (1.0 - alpha) * self._p2r_prog_avg_dt + alpha * dt
+
+        # print and write occasionally
+        if (self._p2r_prog_iter % print_every) == 0:
+            total = getattr(self, "_p2r_total", None)
+            pct = None
+            eta_str = "unknown"
+            if total:
+                pct = (float(self._p2r_prog_iter) / float(total)) * 100.0
+                remaining = max(0, total - int(self._p2r_prog_iter))
+                eta_seconds = remaining * float(self._p2r_prog_avg_dt)
+                hrs = int(eta_seconds // 3600)
+                mins = int((eta_seconds % 3600) // 60)
+                secs = int(eta_seconds % 60)
+                eta_str = f"{hrs}h{mins:02d}m{secs:02d}s"
+
+            loss_str = f" loss={float(loss):.4f}" if (loss is not None) else ""
+            status = f"[PANOPROG] iter={self._p2r_prog_iter}"
+            if total:
+                status += f"/{total} ({pct:.2f}%)"
+            status += f" step_time={self._p2r_prog_avg_dt:.3f}s ({1.0/self._p2r_prog_avg_dt:.2f} it/s){loss_str} ETA={eta_str}"
+            try:
+                print(status, flush=True)
+            except Exception:
+                pass
 
 
 pipeline = Pano2RoomPipeline()

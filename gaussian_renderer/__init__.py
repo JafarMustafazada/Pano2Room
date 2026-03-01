@@ -11,7 +11,7 @@
 
 import torch
 import math
-from depth_diff_gaussian_rasterization_min import GaussianRasterizationSettings, GaussianRasterizer
+from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh import eval_sh
 
@@ -44,8 +44,7 @@ def render(viewpoint_camera, pc: GaussianModel, opt, bg_color: torch.Tensor, sca
         projmatrix=viewpoint_camera.full_proj_transform,
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center,
-        prefiltered=False,
-        debug=opt.debug
+        prefiltered=False
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
