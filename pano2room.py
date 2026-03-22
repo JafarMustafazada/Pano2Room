@@ -557,26 +557,26 @@ class Pano2RoomPipeline(torch.nn.Module):
             if iteration % 200 == 0:
                 print("[PANOPROG] iter =", iteration, "/ 3000")
             if self.save_details:
-                    functions.write_image(
-                        f"{self.save_path}/Train_Ref_rgb_{iteration}.png",
-                        gt_image.squeeze(0)
-                        .permute(1, 2, 0)
-                        .detach()
-                        .cpu()
-                        .numpy()
-                        .clip(0, 1)
-                        * 255.0,
-                    )
-                    functions.write_image(
-                        f"{self.save_path}/Train_GS_rgb_{iteration}.png",
-                        render_image.squeeze(0)
-                        .permute(1, 2, 0)
-                        .detach()
-                        .cpu()
-                        .numpy()
-                        .clip(0, 1)
-                        * 255.0,
-                    )
+                functions.write_image(
+                    f"{self.save_path}/Train_Ref_rgb_{iteration}.png",
+                    gt_image.squeeze(0)
+                    .permute(1, 2, 0)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .clip(0, 1)
+                    * 255.0,
+                )
+                functions.write_image(
+                    f"{self.save_path}/Train_GS_rgb_{iteration}.png",
+                    render_image.squeeze(0)
+                    .permute(1, 2, 0)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .clip(0, 1)
+                    * 255.0,
+                )
 
             with torch.no_grad():
                 # Densification

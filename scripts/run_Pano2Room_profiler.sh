@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 kernprof -l -v pano2room.py
