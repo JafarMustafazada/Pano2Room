@@ -6,7 +6,7 @@
 import numpy as np
 
 
-class GSParams: 
+class GSParams:
     def __init__(self):
         self.sh_degree = 1
         self.images = "images"
@@ -16,19 +16,19 @@ class GSParams:
         self.eval = False
         self.use_depth = False
 
-        self.iterations = 3000 
+        self.iterations = 3000
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
-        self.position_lr_max_steps = 2990#3_000
+        self.position_lr_max_steps = 2990  # 3_000
         self.feature_lr = 0.0025
-        self.opacity_lr = 0.05 #0.05
+        self.opacity_lr = 0.05  # 0.05
         self.scaling_lr = 0.005
         self.rotation_lr = 0.001
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
         self.densification_interval = 100
-        self.opacity_reset_interval = 999999 #3000
+        self.opacity_reset_interval = 999999  # 3000
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
@@ -39,15 +39,20 @@ class GSParams:
 
 
 class CameraParams:
-    def __init__(self, H: int = 512, W: int = 512, angle = 90.0):
+    def __init__(self, H: int = 512, W: int = 512, angle=90.0):
         self.H = H
         self.W = W
 
-        self.fov = ((angle/180.0)*np.pi, (angle/180.0)*np.pi)
-        self.focal = ((0.5*W/np.tan(self.fov[0]/2)), (0.5*H/np.tan(self.fov[0]/2)))
+        self.fov = ((angle / 180.0) * np.pi, (angle / 180.0) * np.pi)
+        self.focal = (
+            (0.5 * W / np.tan(self.fov[0] / 2)),
+            (0.5 * H / np.tan(self.fov[0] / 2)),
+        )
 
-        self.K = np.array([
-            [self.focal[0], 0., self.W/2],
-            [0., self.focal[1], self.H/2],
-            [0.,            0.,       1.],
-        ]).astype(np.float32)
+        self.K = np.array(
+            [
+                [self.focal[0], 0.0, self.W / 2],
+                [0.0, self.focal[1], self.H / 2],
+                [0.0, 0.0, 1.0],
+            ]
+        ).astype(np.float32)

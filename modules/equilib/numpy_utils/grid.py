@@ -37,12 +37,8 @@ def create_grid(
 
     # batched (stacked copies)
     if batch is not None:
-        assert isinstance(
-            batch, int
-        ), f"ERR: batch needs to be integer: batch={batch}"
-        assert (
-            batch > 0
-        ), f"ERR: batch size needs to be larger than 0: batch={batch}"
+        assert isinstance(batch, int), f"ERR: batch needs to be integer: batch={batch}"
+        assert batch > 0, f"ERR: batch size needs to be larger than 0: batch={batch}"
         # FIXME: faster way of copying?
         grid = np.concatenate([grid[np.newaxis, ...]] * batch)
         # grid shape is (b, h, w, 3)
@@ -84,12 +80,8 @@ def create_normalized_grid(
     grid = np.stack((x, y, z), axis=-1)
 
     if batch is not None:
-        assert isinstance(
-            batch, int
-        ), f"ERR: batch needs to be integer: batch={batch}"
-        assert (
-            batch > 0
-        ), f"ERR: batch size needs to be larger than 0: batch={batch}"
+        assert isinstance(batch, int), f"ERR: batch needs to be integer: batch={batch}"
+        assert batch > 0, f"ERR: batch size needs to be larger than 0: batch={batch}"
         # FIXME: faster way of copying?
         grid = np.concatenate([grid[np.newaxis, ...]] * batch)
         # grid shape is (b, h, w, 3)
@@ -110,48 +102,32 @@ def create_xyz_grid(
     rng = np.linspace(-0.5 * ratio, 0.5 * ratio, num=w_face, dtype=dtype)
 
     # Front face (x = 0.5)
-    out[:, 0 * w_face : 1 * w_face, [1, 2]] = np.stack(
-        np.meshgrid(rng, -rng), -1
-    )
+    out[:, 0 * w_face : 1 * w_face, [1, 2]] = np.stack(np.meshgrid(rng, -rng), -1)
     out[:, 0 * w_face : 1 * w_face, 0] = 0.5
 
     # Right face (y = -0.5)
-    out[:, 1 * w_face : 2 * w_face, [0, 2]] = np.stack(
-        np.meshgrid(-rng, -rng), -1
-    )
+    out[:, 1 * w_face : 2 * w_face, [0, 2]] = np.stack(np.meshgrid(-rng, -rng), -1)
     out[:, 1 * w_face : 2 * w_face, 1] = 0.5
 
     # Back face (x = -0.5)
-    out[:, 2 * w_face : 3 * w_face, [1, 2]] = np.stack(
-        np.meshgrid(-rng, -rng), -1
-    )
+    out[:, 2 * w_face : 3 * w_face, [1, 2]] = np.stack(np.meshgrid(-rng, -rng), -1)
     out[:, 2 * w_face : 3 * w_face, 0] = -0.5
 
     # Left face (y = 0.5)
-    out[:, 3 * w_face : 4 * w_face, [0, 2]] = np.stack(
-        np.meshgrid(rng, -rng), -1
-    )
+    out[:, 3 * w_face : 4 * w_face, [0, 2]] = np.stack(np.meshgrid(rng, -rng), -1)
     out[:, 3 * w_face : 4 * w_face, 1] = -0.5
 
     # Up face (z = 0.5)
-    out[:, 4 * w_face : 5 * w_face, [1, 0]] = np.stack(
-        np.meshgrid(rng, rng), -1
-    )
+    out[:, 4 * w_face : 5 * w_face, [1, 0]] = np.stack(np.meshgrid(rng, rng), -1)
     out[:, 4 * w_face : 5 * w_face, 2] = 0.5
 
     # Down face (z = -0.5)
-    out[:, 5 * w_face : 6 * w_face, [1, 0]] = np.stack(
-        np.meshgrid(rng, -rng), -1
-    )
+    out[:, 5 * w_face : 6 * w_face, [1, 0]] = np.stack(np.meshgrid(rng, -rng), -1)
     out[:, 5 * w_face : 6 * w_face, 2] = -0.5
 
     if batch is not None:
-        assert isinstance(
-            batch, int
-        ), f"ERR: batch needs to be integer: batch={batch}"
-        assert (
-            batch > 0
-        ), f"ERR: batch size needs to be larger than 0: batch={batch}"
+        assert isinstance(batch, int), f"ERR: batch needs to be integer: batch={batch}"
+        assert batch > 0, f"ERR: batch size needs to be larger than 0: batch={batch}"
         # FIXME: faster way of copying?
         out = np.concatenate([out[np.newaxis, ...]] * batch)
 

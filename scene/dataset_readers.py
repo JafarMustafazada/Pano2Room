@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -74,7 +74,6 @@ def getNerfppNorm(cam_info):
     return {"translate": translate, "radius": radius}
 
 
-
 def loadCamerasFromData(traindata, white_background):
     cameras = []
 
@@ -89,29 +88,48 @@ def loadCamerasFromData(traindata, white_background):
 
         # get the world-to-camera transform and set R, T
         w2c = np.linalg.inv(c2w)
-        R = np.transpose(w2c[:3,:3])  # R is stored transposed due to 'glm' in CUDA code
+        R = np.transpose(
+            w2c[:3, :3]
+        )  # R is stored transposed due to 'glm' in CUDA code
         T = w2c[:3, 3]
 
         image = frame["image"] if "image" in frame else None
         im_data = np.array(image.convert("RGBA"))
 
-        bg = np.array([1,1,1]) if white_background else np.array([0, 0, 0])
+        bg = np.array([1, 1, 1]) if white_background else np.array([0, 0, 0])
 
         norm_data = im_data / 255.0
-        arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
-        image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
+        arr = norm_data[:, :, :3] * norm_data[:, :, 3:4] + bg * (
+            1 - norm_data[:, :, 3:4]
+        )
+        image = Image.fromarray(np.array(arr * 255.0, dtype=np.byte), "RGB")
         loaded_mask = np.ones_like(norm_data[:, :, 3:4])
 
         fovy = focal2fov(fov2focal(fovx, image.size[1]), image.size[0])
-        FovY = fovy 
+        FovY = fovy
         FovX = fovx
 
-        image = torch.Tensor(arr).permute(2,0,1)
-        loaded_mask = None 
-        
-        cameras.append((Camera(colmap_id=idx, R=R, T=T, FoVx=FovX, FoVy=FovY, image=image, 
-                                gt_alpha_mask=loaded_mask, image_name='', uid=idx, data_device='cuda'), frame['mesh_pose']))
-            
+        image = torch.Tensor(arr).permute(2, 0, 1)
+        loaded_mask = None
+
+        cameras.append(
+            (
+                Camera(
+                    colmap_id=idx,
+                    R=R,
+                    T=T,
+                    FoVx=FovX,
+                    FoVy=FovY,
+                    image=image,
+                    gt_alpha_mask=loaded_mask,
+                    image_name="",
+                    uid=idx,
+                    data_device="cuda",
+                ),
+                frame["mesh_pose"],
+            )
+        )
+
     return cameras
 
 
@@ -132,39 +150,64 @@ def loadCameraPreset(traindata, presetdata):
 
             # get the world-to-camera transform and set R, T
             w2c = np.linalg.inv(c2w)
-            R = np.transpose(w2c[:3,:3])  # R is stored transposed due to 'glm' in CUDA code
+            R = np.transpose(
+                w2c[:3, :3]
+            )  # R is stored transposed due to 'glm' in CUDA code
             T = w2c[:3, 3]
 
             fovy = focal2fov(fov2focal(fovx, W), H)
-            FovY = fovy 
+            FovY = fovy
             FovX = fovx
-        
-            znear, zfar = 0.01, 100
-            world_view_transform = torch.tensor(getWorld2View2(R, T, np.array([0.0, 0.0, 0.0]), 1.0)).transpose(0, 1).cuda()
-            projection_matrix = getProjectionMatrix(znear=znear, zfar=zfar, fovX=FovX, fovY=FovY).transpose(0,1).cuda()
-            full_proj_transform = (world_view_transform.unsqueeze(0).bmm(projection_matrix.unsqueeze(0))).squeeze(0)
 
-            cam_infos[camkey].append(MiniCam(width=W, height=H, fovy=FovY, fovx=FovX, znear=znear, zfar=zfar,
-                                          world_view_transform=world_view_transform, full_proj_transform=full_proj_transform))
-            
+            znear, zfar = 0.01, 100
+            world_view_transform = (
+                torch.tensor(getWorld2View2(R, T, np.array([0.0, 0.0, 0.0]), 1.0))
+                .transpose(0, 1)
+                .cuda()
+            )
+            projection_matrix = (
+                getProjectionMatrix(znear=znear, zfar=zfar, fovX=FovX, fovY=FovY)
+                .transpose(0, 1)
+                .cuda()
+            )
+            full_proj_transform = (
+                world_view_transform.unsqueeze(0).bmm(projection_matrix.unsqueeze(0))
+            ).squeeze(0)
+
+            cam_infos[camkey].append(
+                MiniCam(
+                    width=W,
+                    height=H,
+                    fovy=FovY,
+                    fovx=FovX,
+                    znear=znear,
+                    zfar=zfar,
+                    world_view_transform=world_view_transform,
+                    full_proj_transform=full_proj_transform,
+                )
+            )
+
     return cam_infos
 
 
 def readDataInfo(traindata, white_background):
     print("Reading Training Transforms")
-    
+
     train_cameras = loadCamerasFromData(traindata, white_background)
     preset_minicams = loadCameraPreset(traindata, presetdata=get_camerapaths())
-    
+
     nerf_normalization = getNerfppNorm(train_cameras)
 
-    pcd = BasicPointCloud(points=traindata['pcd_points'].T, colors=traindata['pcd_colors'], normals=None)
+    pcd = BasicPointCloud(
+        points=traindata["pcd_points"].T, colors=traindata["pcd_colors"], normals=None
+    )
 
-    
-    scene_info = SceneInfo(point_cloud=pcd,
-                           train_cameras=train_cameras,
-                           test_cameras=[],
-                           preset_cameras=preset_minicams,
-                           nerf_normalization=nerf_normalization,
-                           ply_path='')
+    scene_info = SceneInfo(
+        point_cloud=pcd,
+        train_cameras=train_cameras,
+        test_cameras=[],
+        preset_cameras=preset_minicams,
+        nerf_normalization=nerf_normalization,
+        ply_path="",
+    )
     return scene_info

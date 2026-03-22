@@ -50,9 +50,7 @@ def prep_matrices(
     device: torch.device = torch.device("cpu"),
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 
-    m = create_grid(
-        height=height, width=width, batch=batch, dtype=dtype, device=device
-    )
+    m = create_grid(height=height, width=width, batch=batch, dtype=dtype, device=device)
     m = m.unsqueeze(-1)
     G = create_cam2global_matrix(
         height=height,
@@ -188,10 +186,7 @@ def run(
         # NOTE: don't need to initialize for `native`
         out = None
     else:
-        out = torch.empty(
-            (bs, c, height, width), dtype=dtype, device=img_device
-        )
-
+        out = torch.empty((bs, c, height, width), dtype=dtype, device=img_device)
 
     # FIXME: for now, calculate the grid in cpu
     # I need to benchmark performance of it when grid is created on cuda

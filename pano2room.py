@@ -21,10 +21,18 @@ import time
 from utils.camera_utils import *
 
 import utils.functions as functions
-from utils.functions import rot_x_world_to_cam, rot_y_world_to_cam, rot_z_world_to_cam, colorize_single_channel_image, write_video
+from utils.functions import (
+    rot_x_world_to_cam,
+    rot_y_world_to_cam,
+    rot_z_world_to_cam,
+    colorize_single_channel_image,
+    write_video,
+)
 from modules.equilib import equi2pers, cube2equi, equi2cube
 
-from modules.geo_predictors.PanoFusionDistancePredictor import PanoFusionDistancePredictor
+from modules.geo_predictors.PanoFusionDistancePredictor import (
+    PanoFusionDistancePredictor,
+)
 from modules.inpainters import PanoPersFusionInpainter
 from modules.geo_predictors import PanoJointPredictor
 from modules.mesh_fusion.sup_info import SupInfoPool
@@ -46,22 +54,28 @@ class Pano2RoomPipeline(torch.nn.Module):
         self.blur_radius = 0
         self.faces_per_pixel = 8
         self.fov = 90
-        self.R, self.T = torch.Tensor([[[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]]]), torch.Tensor([[0., 0., 0.]])
+        self.R, self.T = torch.Tensor(
+            [[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]]
+        ), torch.Tensor([[0.0, 0.0, 0.0]])
         self.pano_width, self.pano_height = 1024 * 2, 512 * 2
         self.H, self.W = 512, 512
         self.device = "cuda:0"
 
         # initialize
-        self.rendered_depth = torch.zeros((self.H, self.W), device=self.device) 
-        self.inpaint_mask = torch.ones((self.H, self.W), device=self.device, dtype=torch.bool)  
+        self.rendered_depth = torch.zeros((self.H, self.W), device=self.device)
+        self.inpaint_mask = torch.ones(
+            (self.H, self.W), device=self.device, dtype=torch.bool
+        )
         self.vertices = torch.empty((3, 0), device=self.device, requires_grad=False)
         self.colors = torch.empty((3, 0), device=self.device, requires_grad=False)
-        self.faces = torch.empty((3, 0), device=self.device, dtype=torch.long, requires_grad=False)
+        self.faces = torch.empty(
+            (3, 0), device=self.device, dtype=torch.long, requires_grad=False
+        )
         self.pix_to_face = None
 
         self.pose_scale = 0.6
-        self.pano_center_offset = (-0.2,0.3)
-        self.inpaint_frame_stride = 20   
+        self.pano_center_offset = (-0.2, 0.3)
+        self.inpaint_frame_stride = 20
 
         # create exp dir
         self.setting = f""
@@ -69,7 +83,7 @@ class Pano2RoomPipeline(torch.nn.Module):
         if apply_timestamp:
             timestamp = str(int(time.time()))[-8:]
             self.setting += f"-{timestamp}"
-        self.save_path = f'output/Pano2Room-results'
+        self.save_path = f"output/Pano2Room-results"
         self.save_details = False
 
         if not os.path.exists(self.save_path):
@@ -87,7 +101,14 @@ class Pano2RoomPipeline(torch.nn.Module):
 
     def project(self, world_to_cam):
         # project mesh into pose and render (rgb, depth, mask)
-        rendered_image_tensor, self.rendered_depth, self.inpaint_mask, self.pix_to_face, self.z_buf, self.mesh = render_mesh(
+        (
+            rendered_image_tensor,
+            self.rendered_depth,
+            self.inpaint_mask,
+            self.pix_to_face,
+            self.z_buf,
+            self.mesh,
+        ) = render_mesh(
             vertices=self.vertices,
             faces=self.faces,
             vertex_features=self.colors,
@@ -96,14 +117,21 @@ class Pano2RoomPipeline(torch.nn.Module):
             fov_in_degrees=self.fov,
             RT=world_to_cam,
             blur_radius=self.blur_radius,
-            faces_per_pixel=self.faces_per_pixel
+            faces_per_pixel=self.faces_per_pixel,
         )
         # mask rendered_image_tensor
         rendered_image_tensor = rendered_image_tensor * ~self.inpaint_mask
 
         # stable diffusion models want the mask and image as PIL images
-        rendered_image_pil = Image.fromarray((rendered_image_tensor.permute(1, 2, 0).detach().cpu().numpy()[..., :3] * 255).astype(np.uint8))
-        self.inpaint_mask_pil = Image.fromarray(self.inpaint_mask.detach().cpu().squeeze().float().numpy() * 255).convert("RGB")
+        rendered_image_pil = Image.fromarray(
+            (
+                rendered_image_tensor.permute(1, 2, 0).detach().cpu().numpy()[..., :3]
+                * 255
+            ).astype(np.uint8)
+        )
+        self.inpaint_mask_pil = Image.fromarray(
+            self.inpaint_mask.detach().cpu().squeeze().float().numpy() * 255
+        ).convert("RGB")
 
         self.inpaint_mask_restore = self.inpaint_mask
         self.inpaint_mask_pil_restore = self.inpaint_mask_pil
@@ -111,7 +139,7 @@ class Pano2RoomPipeline(torch.nn.Module):
         return rendered_image_tensor[:3, ...], rendered_image_pil
 
     def render_pano(self, pose):
-        cubemap_list = [] 
+        cubemap_list = []
         for cubemap_pose in self.cubemap_w2c_list:
             pose_tmp = pose.clone()
             pose_tmp = cubemap_pose.cuda() @ pose_tmp
@@ -123,17 +151,23 @@ class Pano2RoomPipeline(torch.nn.Module):
             mask_CHW = self.inpaint_mask.unsqueeze(0).cuda()
             cubemap_list += [torch.cat([rgb_CHW, distance_CHW, mask_CHW], axis=0)]
 
-        torch.set_default_tensor_type('torch.FloatTensor')
-        pano_rgbd = cube2equi(cubemap_list,
-                                "list",
-                                1024,2048) #CHW
-        pano_rgb = pano_rgbd[:3,:,:]
-        pano_depth =  pano_rgbd[3:4,:,:].squeeze(0)
-        pano_mask =  pano_rgbd[4:,:,:].squeeze(0)
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        torch.set_default_tensor_type("torch.FloatTensor")
+        pano_rgbd = cube2equi(cubemap_list, "list", 1024, 2048)  # CHW
+        pano_rgb = pano_rgbd[:3, :, :]
+        pano_depth = pano_rgbd[3:4, :, :].squeeze(0)
+        pano_mask = pano_rgbd[4:, :, :].squeeze(0)
+        torch.set_default_tensor_type("torch.cuda.FloatTensor")
         return pano_rgb, pano_depth, pano_mask  # CHW, HW, HW
 
-    def rgbd_to_mesh(self, rgb, depth, world_to_cam=None, mask=None, pix_to_face=None, using_distance_map=False):
+    def rgbd_to_mesh(
+        self,
+        rgb,
+        depth,
+        world_to_cam=None,
+        mask=None,
+        pix_to_face=None,
+        using_distance_map=False,
+    ):
         predicted_depth = depth.cuda()
         rgb = rgb.squeeze(0).cuda()
         if world_to_cam is None:
@@ -148,7 +182,7 @@ class Pano2RoomPipeline(torch.nn.Module):
 
         if self.inpaint_mask.sum() == 0:
             return
-        
+
         vertices, faces, colors = features_to_world_space_mesh(
             colors=rgb,
             depth=predicted_depth,
@@ -159,10 +193,10 @@ class Pano2RoomPipeline(torch.nn.Module):
             faces=self.faces,
             vertices=self.vertices,
             using_distance_map=using_distance_map,
-            edge_threshold=0.05
+            edge_threshold=0.05,
         )
 
-        faces += self.vertices.shape[1] 
+        faces += self.vertices.shape[1]
 
         self.vertices_restore = self.vertices.clone()
         self.colors_restore = self.colors.clone()
@@ -173,43 +207,51 @@ class Pano2RoomPipeline(torch.nn.Module):
         self.faces = torch.cat([self.faces, faces], dim=1)
 
     def find_depth_edge(self, depth, dilate_iter=0):
-        gray = (depth/depth.max() * 255).astype(np.uint8)
+        gray = (depth / depth.max() * 255).astype(np.uint8)
         edges = cv2.Canny(gray, 60, 150)
         if dilate_iter > 0:
             kernel = np.ones((3, 3), np.uint8)
             edges = cv2.dilate(edges, kernel, iterations=dilate_iter)
         return edges
 
-    def pano_distance_to_mesh(self, pano_rgb, pano_distance, depth_edge_inpaint_mask, pose=None):
-        self.rgbd_to_mesh(pano_rgb, pano_distance, mask=depth_edge_inpaint_mask, using_distance_map=True, world_to_cam=pose)
- 
+    def pano_distance_to_mesh(
+        self, pano_rgb, pano_distance, depth_edge_inpaint_mask, pose=None
+    ):
+        self.rgbd_to_mesh(
+            pano_rgb,
+            pano_distance,
+            mask=depth_edge_inpaint_mask,
+            using_distance_map=True,
+            world_to_cam=pose,
+        )
+
     def load_inpaint_poses(self):
         pano_rgb, pano_distance, pano_mask = self.render_pano(self.world_to_cam)
 
-        pose_dict = {} # {idx:pose, ...} # pose are c2w
+        pose_dict = {}  # {idx:pose, ...} # pose are c2w
         key = 0
 
-        sampled_inpaint_poses = self.poses[::self.inpaint_frame_stride]
+        sampled_inpaint_poses = self.poses[:: self.inpaint_frame_stride]
         for anchor_idx in range(len(sampled_inpaint_poses)):
-            pose = torch.eye(4).float() # pano pose dosen't support rotations
+            pose = torch.eye(4).float()  # pano pose dosen't support rotations
 
             pose_44 = sampled_inpaint_poses[anchor_idx].clone()
             pose_44 = pose_44.float()
-            Rw2c = pose_44[:3,:3].cpu().numpy()
-            Tw2c = pose_44[:3,3:].cpu().numpy()
-            yz_reverse = np.array([[1,0,0], [0,1,0], [0,0,1]])
+            Rw2c = pose_44[:3, :3].cpu().numpy()
+            Tw2c = pose_44[:3, 3:].cpu().numpy()
+            yz_reverse = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
             Rc2w = np.matmul(yz_reverse, Rw2c).T
             Tc2w = -np.matmul(Rc2w, np.matmul(yz_reverse, Tw2c))
             Pc2w = np.concatenate((Rc2w, Tc2w), axis=1)
-            Pc2w = np.concatenate((Pc2w, np.array([[0,0,0,1]])), axis=0) 
+            Pc2w = np.concatenate((Pc2w, np.array([[0, 0, 0, 1]])), axis=0)
             pose[:3, 3] = torch.tensor(Pc2w[:3, 3]).cuda().float()
             pose[:3, 3] *= -1
             pose_dict[key] = pose.clone()
 
             key += 1
-        return  pose_dict
+        return pose_dict
 
-    def stage_inpaint_pano_greedy_search(self, pose_dict): 
+    def stage_inpaint_pano_greedy_search(self, pose_dict):
         print("stage_inpaint_pano_greedy_search")
         pano_rgb, pano_distance, pano_mask = self.render_pano(self.world_to_cam)
 
@@ -222,17 +264,23 @@ class Pano2RoomPipeline(torch.nn.Module):
             for key in keys:
                 pose = pose_dict[key]
                 pano_rgb, pano_distance, pano_mask = self.render_pano(pose.cuda())
-                view_completeness = torch.sum((1 - pano_mask * 1))/(pano_mask.shape[0] * pano_mask.shape[1])
-                
+                view_completeness = torch.sum((1 - pano_mask * 1)) / (
+                    pano_mask.shape[0] * pano_mask.shape[1]
+                )
+
                 values_sampled_poses += [(key, view_completeness, pose)]
-                torch.cuda.empty_cache() 
+                torch.cuda.empty_cache()
             if len(values_sampled_poses) < 1:
                 break
 
             # find inpainting with least view completeness
-            values_sampled_poses = sorted(values_sampled_poses, key=lambda item: item[1])
+            values_sampled_poses = sorted(
+                values_sampled_poses, key=lambda item: item[1]
+            )
             # least_complete_view = values_sampled_poses[0]
-            least_complete_view = values_sampled_poses[len(values_sampled_poses)*2//3]
+            least_complete_view = values_sampled_poses[
+                len(values_sampled_poses) * 2 // 3
+            ]
 
             key, view_completeness, pose = least_complete_view
             print(f"least_complete_view:{view_completeness}")
@@ -242,48 +290,83 @@ class Pano2RoomPipeline(torch.nn.Module):
             pano_rgb, pano_distance, pano_mask = self.render_pano(pose.cuda())
 
             # inpaint pano
-            colors = pano_rgb.permute(1,2,0).clone()
+            colors = pano_rgb.permute(1, 2, 0).clone()
             distances = pano_distance.unsqueeze(-1).clone()
             pano_inpaint_mask = pano_mask.clone()
 
-            if pano_inpaint_mask.min().item() < .5:
+            if pano_inpaint_mask.min().item() < 0.5:
                 # inpainting pano
-                colors, distances, normals = self.inpaint_new_panorama(idx=key, colors=colors, distances=distances, pano_mask=pano_inpaint_mask) # HWC, HWC, HW
-                
-                #apply_GeoCheck:
+                colors, distances, normals = self.inpaint_new_panorama(
+                    idx=key,
+                    colors=colors,
+                    distances=distances,
+                    pano_mask=pano_inpaint_mask,
+                )  # HWC, HWC, HW
+
+                # apply_GeoCheck:
                 perf_pose = pose.clone()
-                perf_pose[0,3], perf_pose[1,3], perf_pose[2,3] = -pose[0,3], pose[2,3], 0 
+                perf_pose[0, 3], perf_pose[1, 3], perf_pose[2, 3] = (
+                    -pose[0, 3],
+                    pose[2, 3],
+                    0,
+                )
                 rays = gen_pano_rays(perf_pose, self.pano_height, self.pano_width)
-                conflict_mask = self.sup_pool.geo_check(rays, distances.unsqueeze(-1))    # 0 conflict, 1 not conflict
+                conflict_mask = self.sup_pool.geo_check(
+                    rays, distances.unsqueeze(-1)
+                )  # 0 conflict, 1 not conflict
                 pano_inpaint_mask = pano_inpaint_mask * conflict_mask
-                    
+
             # add new mesh
-            self.pano_distance_to_mesh(colors.permute(2,0,1), distances, pano_inpaint_mask, pose=pose) #CHW, HW, HW
+            self.pano_distance_to_mesh(
+                colors.permute(2, 0, 1), distances, pano_inpaint_mask, pose=pose
+            )  # CHW, HW, HW
 
             # apply_GeoCheck:
             sup_mask = pano_inpaint_mask.clone()
-            self.sup_pool.register_sup_info(pose=perf_pose, mask=sup_mask, rgb=colors, distance=distances.unsqueeze(-1), normal=normals)
-            
+            self.sup_pool.register_sup_info(
+                pose=perf_pose,
+                mask=sup_mask,
+                rgb=colors,
+                distance=distances.unsqueeze(-1),
+                normal=normals,
+            )
+
             # save renderred
             panorama_tensor_pil = functions.tensor_to_pil(pano_rgb.unsqueeze(0))
             panorama_tensor_pil.save(f"{self.save_path}/renderred_pano_{key}.png")
             if self.save_details:
-                depth_pil = Image.fromarray(colorize_single_channel_image(pano_distance.unsqueeze(0)/self.scene_depth_max))
-                depth_pil.save(f"{self.save_path}/renderred_depth_{key}.png")        
-                inpaint_mask_pil = Image.fromarray(pano_mask.detach().cpu().squeeze().float().numpy() * 255).convert("RGB")
-                inpaint_mask_pil.save(f"{self.save_path}/mask_{key}.png")  
-                inpaint_mask_pil = Image.fromarray(pano_inpaint_mask.detach().cpu().squeeze().float().numpy() * 255).convert("RGB")
-                inpaint_mask_pil.save(f"{self.save_path}/inpaint_mask_{key}.png")  
+                depth_pil = Image.fromarray(
+                    colorize_single_channel_image(
+                        pano_distance.unsqueeze(0) / self.scene_depth_max
+                    )
+                )
+                depth_pil.save(f"{self.save_path}/renderred_depth_{key}.png")
+                inpaint_mask_pil = Image.fromarray(
+                    pano_mask.detach().cpu().squeeze().float().numpy() * 255
+                ).convert("RGB")
+                inpaint_mask_pil.save(f"{self.save_path}/mask_{key}.png")
+                inpaint_mask_pil = Image.fromarray(
+                    pano_inpaint_mask.detach().cpu().squeeze().float().numpy() * 255
+                ).convert("RGB")
+                inpaint_mask_pil.save(f"{self.save_path}/inpaint_mask_{key}.png")
 
             # save inpainted
-            panorama_tensor_pil = functions.tensor_to_pil(colors.permute(2,0,1).unsqueeze(0))
+            panorama_tensor_pil = functions.tensor_to_pil(
+                colors.permute(2, 0, 1).unsqueeze(0)
+            )
             panorama_tensor_pil.save(f"{self.save_path}/inpainted_pano_{key}.png")
-            depth_pil = Image.fromarray(colorize_single_channel_image(distances.unsqueeze(0)/self.scene_depth_max))
-            depth_pil.save(f"{self.save_path}/inpainted_depth_{key}.png") 
+            depth_pil = Image.fromarray(
+                colorize_single_channel_image(
+                    distances.unsqueeze(0) / self.scene_depth_max
+                )
+            )
+            depth_pil.save(f"{self.save_path}/inpainted_depth_{key}.png")
 
             # collect pano images for GS training
-            inpainted_panos_and_poses += [(colors.permute(2,0,1).unsqueeze(0), pose.clone())] #BCHW, 44
-            
+            inpainted_panos_and_poses += [
+                (colors.permute(2, 0, 1).unsqueeze(0), pose.clone())
+            ]  # BCHW, 44
+
         return inpainted_panos_and_poses
 
     def inpaint_new_panorama(self, idx, colors, distances, pano_mask):
@@ -311,13 +394,15 @@ class Pano2RoomPipeline(torch.nn.Module):
         inpainted_img = colors * (1 - mask) + inpainted_img * mask
         inpainted_img = inpainted_img.cuda()
 
-        inpainted_distances, inpainted_normals = self.geo_predictor(idx,
-                                                                    inpainted_img,
-                                                                    distances,
-                                                                    mask=mask,
-                                                                    reg_loss_weight=0.,
-                                                                    normal_loss_weight=5e-2,
-                                                                    normal_tv_loss_weight=5e-2)
+        inpainted_distances, inpainted_normals = self.geo_predictor(
+            idx,
+            inpainted_img,
+            distances,
+            mask=mask,
+            reg_loss_weight=0.0,
+            normal_loss_weight=5e-2,
+            normal_tv_loss_weight=5e-2,
+        )
 
         inpainted_distances = inpainted_distances.squeeze()
         return inpainted_img, inpainted_distances, inpainted_normals
@@ -327,33 +412,40 @@ class Pano2RoomPipeline(torch.nn.Module):
         image = Image.open(image_path)
         if image.size[0] < image.size[1]:
             image = image.transpose(Image.TRANSPOSE)
-        image = functions.resize_image_with_aspect_ratio(image, new_width=self.pano_width)
-        panorama_tensor = torch.tensor(np.array(image))[...,:3].permute(2,0,1).unsqueeze(0).float()/255
+        image = functions.resize_image_with_aspect_ratio(
+            image, new_width=self.pano_width
+        )
+        panorama_tensor = (
+            torch.tensor(np.array(image))[..., :3].permute(2, 0, 1).unsqueeze(0).float()
+            / 255
+        )
         panorama_image_pil = functions.tensor_to_pil(panorama_tensor)
 
         depth_scale_factor = 3.4092
 
         # get panofusion_distance
         pano_fusion_distance_predictor = PanoFusionDistancePredictor()
-        depth = pano_fusion_distance_predictor.predict(panorama_tensor.squeeze(0).permute(1,2,0)) #input:HW3
-        depth = depth/depth.max() * depth_scale_factor
+        depth = pano_fusion_distance_predictor.predict(
+            panorama_tensor.squeeze(0).permute(1, 2, 0)
+        )  # input:HW3
+        depth = depth / depth.max() * depth_scale_factor
         print(f"pano_fusion_distance...[{depth.min(), depth.mean(),depth.max()}]")
-        
-        return panorama_tensor, depth# panorama_tensor:BCHW, depth:HW
 
-    def load_camera_poses(self, pano_center_offset=[0,0]):
-        subset_path = f'input/Camera_Trajectory' # initial 6 poses are cubemaps poses
+        return panorama_tensor, depth  # panorama_tensor:BCHW, depth:HW
+
+    def load_camera_poses(self, pano_center_offset=[0, 0]):
+        subset_path = f"input/Camera_Trajectory"  # initial 6 poses are cubemaps poses
         files = os.listdir(subset_path)
 
         self.scene_depth_max = 4.0228885328450446
 
         pano_pose_44 = None
-        pose_files = [f for f in files if f.startswith('camera_pose')]
+        pose_files = [f for f in files if f.startswith("camera_pose")]
         pose_files = sorted(pose_files)
         poses_name = pose_files
         poses = []
         for i, pose_name in enumerate(poses_name):
-            with open(f'{subset_path}/{pose_name}', 'r') as f: 
+            with open(f"{subset_path}/{pose_name}", "r") as f:
                 lines = f.readlines()
             pose_44 = []
             for line in lines:
@@ -362,28 +454,35 @@ class Pano2RoomPipeline(torch.nn.Module):
             if pano_pose_44 is None:
                 pano_pose_44 = pose_44.copy()
                 pano_pose_44_cubemaps = pose_44.copy()
-                pano_pose_44[0,3] += pano_center_offset[0]
-                pano_pose_44[2,3] += pano_center_offset[1]
-            
+                pano_pose_44[0, 3] += pano_center_offset[0]
+                pano_pose_44[2, 3] += pano_center_offset[1]
+
             if i < 6:
-                pose_relative_44 = pose_44 @ np.linalg.inv(pano_pose_44_cubemaps)  
+                pose_relative_44 = pose_44 @ np.linalg.inv(pano_pose_44_cubemaps)
             else:
                 ### convert gt_pose to gt_relative_pose with pano_pose
                 pose_relative_44 = pose_44 @ np.linalg.inv(pano_pose_44)
 
-            pose_relative_44 = np.vstack((-pose_relative_44[0:1,:], -pose_relative_44[1:2,:], pose_relative_44[2:3,:], pose_relative_44[3:4,:]))
+            pose_relative_44 = np.vstack(
+                (
+                    -pose_relative_44[0:1, :],
+                    -pose_relative_44[1:2, :],
+                    pose_relative_44[2:3, :],
+                    pose_relative_44[3:4, :],
+                )
+            )
             pose_relative_44 = pose_relative_44 @ rot_z_world_to_cam(180).cpu().numpy()
 
-            pose_relative_44[:3,3] *= self.pose_scale
-            poses += [torch.tensor(pose_relative_44).float()] # w2c
+            pose_relative_44[:3, 3] *= self.pose_scale
+            poses += [torch.tensor(pose_relative_44).float()]  # w2c
 
         return pano_pose_44, poses
 
     def pano_to_perpective(self, pano_bchw, pitch, yaw, fov):
         rots = {
-            'roll': 0.,
-            'pitch': pitch,  # rotate vertical
-            'yaw': yaw,  # rotate horizontal
+            "roll": 0.0,
+            "pitch": pitch,  # rotate vertical
+            "yaw": yaw,  # rotate horizontal
         }
 
         perspective = equi2pers(
@@ -393,13 +492,21 @@ class Pano2RoomPipeline(torch.nn.Module):
             width=self.W,
             fov_x=fov,
             mode="bilinear",
-        ).unsqueeze(0) # BCHW
+        ).unsqueeze(
+            0
+        )  # BCHW
 
         return perspective
 
-    def pano_to_cubemap(self, pano_tensor, pano_depth_tensor=None): #BCHW, HW
-        cubemaps_pitch_yaw = [(0, 0), (0, 3/2 * np.pi), (0, 1 * np.pi), (0, 1/2 * np.pi),\
-                            (-1/2 * np.pi, 0), (1/2 * np.pi, 0)]
+    def pano_to_cubemap(self, pano_tensor, pano_depth_tensor=None):  # BCHW, HW
+        cubemaps_pitch_yaw = [
+            (0, 0),
+            (0, 3 / 2 * np.pi),
+            (0, 1 * np.pi),
+            (0, 1 / 2 * np.pi),
+            (-1 / 2 * np.pi, 0),
+            (1 / 2 * np.pi, 0),
+        ]
         pitch_yaw_list = cubemaps_pitch_yaw
 
         cubemaps = []
@@ -409,14 +516,16 @@ class Pano2RoomPipeline(torch.nn.Module):
             view_rgb = self.pano_to_perpective(pano_tensor, pitch, yaw, 90)
             cubemaps += [view_rgb.cpu().clone()]
             if pano_depth_tensor is not None:
-                view_depth = self.pano_to_perpective(pano_depth_tensor.unsqueeze(0).unsqueeze(0), pitch, yaw, 90)
+                view_depth = self.pano_to_perpective(
+                    pano_depth_tensor.unsqueeze(0).unsqueeze(0), pitch, yaw, 90
+                )
                 cubemaps_depth += [view_depth.cpu().clone()]
         return cubemaps, cubemaps_depth  # BCHW, BCHW
 
     def train_GS(self):
         if not self.scene:
-            raise('Build 3D Scene First!')
-        
+            raise ("Build 3D Scene First!")
+
         iterable_gauss = range(1, self.opt.iterations + 1)
 
         for iteration in iterable_gauss:
@@ -424,46 +533,86 @@ class Pano2RoomPipeline(torch.nn.Module):
 
             # Pick a random Camera
             viewpoint_stack = self.scene.getTrainCameras().copy()
-            viewpoint_cam, mesh_pose = viewpoint_stack[iteration%len(viewpoint_stack)]
+            viewpoint_cam, mesh_pose = viewpoint_stack[iteration % len(viewpoint_stack)]
 
             # Render GS
-            render_pkg = render(viewpoint_cam, self.gaussians, self.opt, self.background)
+            render_pkg = render(
+                viewpoint_cam, self.gaussians, self.opt, self.background
+            )
             render_image, viewspace_point_tensor, visibility_filter, radii = (
-                render_pkg['render'], render_pkg['viewspace_points'], render_pkg['visibility_filter'], render_pkg['radii'])
-            
+                render_pkg["render"],
+                render_pkg["viewspace_points"],
+                render_pkg["visibility_filter"],
+                render_pkg["radii"],
+            )
+
             # Loss
             gt_image = viewpoint_cam.original_image.cuda()
             Ll1 = l1_loss(render_image, gt_image)
-            loss = (1.0 - self.opt.lambda_dssim) * Ll1 + self.opt.lambda_dssim * (1.0 - ssim(render_image, gt_image))
+            loss = (1.0 - self.opt.lambda_dssim) * Ll1 + self.opt.lambda_dssim * (
+                1.0 - ssim(render_image, gt_image)
+            )
             loss.backward()
 
+            if iteration % 200 == 0:
+                print("[PANOPROG] iter =", iteration, "/ 3000")
             if self.save_details:
-                if iteration % 200 == 0:
-                    print("[PANOPROG] iter =", iteration, "/ 3000")
-                    functions.write_image(f"{self.save_path}/Train_Ref_rgb_{iteration}.png", gt_image.squeeze(0).permute(1,2,0).detach().cpu().numpy().clip(0,1)*255.)
-                    functions.write_image(f"{self.save_path}/Train_GS_rgb_{iteration}.png", render_image.squeeze(0).permute(1,2,0).detach().cpu().numpy().clip(0,1)*255.)
+                    functions.write_image(
+                        f"{self.save_path}/Train_Ref_rgb_{iteration}.png",
+                        gt_image.squeeze(0)
+                        .permute(1, 2, 0)
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        .clip(0, 1)
+                        * 255.0,
+                    )
+                    functions.write_image(
+                        f"{self.save_path}/Train_GS_rgb_{iteration}.png",
+                        render_image.squeeze(0)
+                        .permute(1, 2, 0)
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        .clip(0, 1)
+                        * 255.0,
+                    )
 
             with torch.no_grad():
                 # Densification
                 if iteration < self.opt.densify_until_iter:
                     self.gaussians.max_radii2D[visibility_filter] = torch.max(
-                        self.gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-                    self.gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                        self.gaussians.max_radii2D[visibility_filter],
+                        radii[visibility_filter],
+                    )
+                    self.gaussians.add_densification_stats(
+                        viewspace_point_tensor, visibility_filter
+                    )
 
-                    if iteration > self.opt.densify_from_iter and iteration % self.opt.densification_interval == 0:
-                        size_threshold = 20 if iteration > self.opt.opacity_reset_interval else None
+                    if (
+                        iteration > self.opt.densify_from_iter
+                        and iteration % self.opt.densification_interval == 0
+                    ):
+                        size_threshold = (
+                            20 if iteration > self.opt.opacity_reset_interval else None
+                        )
                         self.gaussians.densify_and_prune(
-                            self.opt.densify_grad_threshold, 0.005, self.scene.cameras_extent, size_threshold)
-                    
-                    if (iteration % self.opt.opacity_reset_interval == 0 
-                        or (self.opt.white_background and iteration == self.opt.densify_from_iter)
+                            self.opt.densify_grad_threshold,
+                            0.005,
+                            self.scene.cameras_extent,
+                            size_threshold,
+                        )
+
+                    if iteration % self.opt.opacity_reset_interval == 0 or (
+                        self.opt.white_background
+                        and iteration == self.opt.densify_from_iter
                     ):
                         self.gaussians.reset_opacity()
 
                 # Optimizer step
                 if iteration < self.opt.iterations:
                     self.gaussians.optimizer.step()
-                    self.gaussians.optimizer.zero_grad(set_to_none = True)
+                    self.gaussians.optimizer.zero_grad(set_to_none=True)
 
     def eval_GS(self, eval_GS_cams):
         viewpoint_stack = eval_GS_cams
@@ -476,45 +625,61 @@ class Pano2RoomPipeline(torch.nn.Module):
             viewpoint_cam, mesh_pose = viewpoint_stack[i]
 
             results = render(viewpoint_cam, self.gaussians, self.opt, self.background)
-            frame, depth = results['render'], results['depth'].detach().cpu()
+            frame, depth = results["render"], results["depth"].detach().cpu()
 
             framelist.append(
-                np.round(frame.squeeze(0).permute(1,2,0).detach().cpu().numpy().clip(0,1)*255.).astype(np.uint8))
-            depthlist.append(colorize_single_channel_image(depth.detach().cpu()/self.scene_depth_max))
+                np.round(
+                    frame.squeeze(0).permute(1, 2, 0).detach().cpu().numpy().clip(0, 1)
+                    * 255.0
+                ).astype(np.uint8)
+            )
+            depthlist.append(
+                colorize_single_channel_image(
+                    depth.detach().cpu() / self.scene_depth_max
+                )
+            )
 
         if self.save_details:
             for i, frame in enumerate(framelist):
                 image = Image.fromarray(frame, mode="RGB")
                 image.save(os.path.join(self.save_path, f"Eval_render_rgb_{i}.png"))
-                functions.write_image(f"{self.save_path}/Eval_render_depth_{i}.png", depthlist[i])
-        
+                functions.write_image(
+                    f"{self.save_path}/Eval_render_depth_{i}.png", depthlist[i]
+                )
+
         write_video(f"{self.save_path}/GS_render_video.mp4", framelist[6:], fps=30)
         write_video(f"{self.save_path}/GS_depth_video.mp4", depthlist[6:], fps=30)
         print("Result saved at: ", self.save_path)
-            
+
     def run(self):
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        torch.set_default_tensor_type("torch.cuda.FloatTensor")
         self.pano_pose, self.poses = self.load_camera_poses(self.pano_center_offset)
         pano_rgb, pano_depth = self.load_pano()
         panorama_tensor, init_depth = pano_rgb.squeeze(0).cuda(), pano_depth.cuda()
 
-        depth_edge = self.find_depth_edge(init_depth.cpu().detach().numpy(), dilate_iter=1)
+        depth_edge = self.find_depth_edge(
+            init_depth.cpu().detach().numpy(), dilate_iter=1
+        )
         depth_edge_pil = Image.fromarray(depth_edge)
-        depth_pil = Image.fromarray(visualize_depth_numpy(init_depth.cpu().detach().numpy())[0].astype(np.uint8))
-        _, _ = save_rgbd(depth_pil, depth_edge_pil, f'depth_edge', 0, self.save_path)  
-        depth_edge_inpaint_mask = ~(torch.from_numpy(depth_edge).cuda().bool()) 
+        depth_pil = Image.fromarray(
+            visualize_depth_numpy(init_depth.cpu().detach().numpy())[0].astype(np.uint8)
+        )
+        _, _ = save_rgbd(depth_pil, depth_edge_pil, f"depth_edge", 0, self.save_path)
+        depth_edge_inpaint_mask = ~(torch.from_numpy(depth_edge).cuda().bool())
 
         self.sup_pool = SupInfoPool()
-        self.sup_pool.register_sup_info(pose=torch.eye(4).cuda(),
-                                        mask=torch.ones([self.pano_height, self.pano_width]),
-                                        rgb=panorama_tensor.permute(1,2,0),
-                                        distance=init_depth.unsqueeze(-1))
+        self.sup_pool.register_sup_info(
+            pose=torch.eye(4).cuda(),
+            mask=torch.ones([self.pano_height, self.pano_width]),
+            rgb=panorama_tensor.permute(1, 2, 0),
+            distance=init_depth.unsqueeze(-1),
+        )
         self.sup_pool.gen_occ_grid(256)
 
         # Pano2Mesh
         self.pano_distance_to_mesh(panorama_tensor, init_depth, depth_edge_inpaint_mask)
 
-        # Mesh Inpainting        
+        # Mesh Inpainting
         pose_dict = self.load_inpaint_poses()
         print(f"start inpainting with poses #{len(self.poses)}")
         inpainted_panos_and_poses = self.stage_inpaint_pano_greedy_search(pose_dict)
@@ -525,58 +690,61 @@ class Pano2RoomPipeline(torch.nn.Module):
         self.gaussians = GaussianModel(self.opt.sh_degree)
         self.opt.white_background = True
         bg_color = [1, 1, 1] if self.opt.white_background else [0, 0, 0]
-        self.background = torch.tensor(bg_color, dtype=torch.float32, device='cuda')
-        
+        self.background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
         traindata = {
-            'camera_angle_x': self.cam.fov[0],
-            'W': self.W,
-            'H': self.H,
-            'pcd_points': self.vertices.detach().cpu(),
-            'pcd_colors': self.colors.permute(1,0).detach().cpu(),
-            'frames': [],
+            "camera_angle_x": self.cam.fov[0],
+            "W": self.W,
+            "H": self.H,
+            "pcd_points": self.vertices.detach().cpu(),
+            "pcd_colors": self.colors.permute(1, 0).detach().cpu(),
+            "frames": [],
         }
         for inpainted_pano_images, pano_pose_44 in inpainted_panos_and_poses:
-            cubemaps, cubemaps_depth = self.pano_to_cubemap(inpainted_pano_images) # BCHW
+            cubemaps, cubemaps_depth = self.pano_to_cubemap(
+                inpainted_pano_images
+            )  # BCHW
             for i in range(len(cubemaps)):
-                inpainted_img = cubemaps[i] 
+                inpainted_img = cubemaps[i]
 
                 mesh_pose = self.cubemap_w2c_list[i].cuda() @ pano_pose_44.clone()
 
                 pose_44 = mesh_pose.clone()
                 pose_44 = pose_44.float()
-                pose_44[0:1,:] *= -1
-                pose_44[1:2,:] *= -1
+                pose_44[0:1, :] *= -1
+                pose_44[1:2, :] *= -1
 
-                Rw2c = pose_44[:3,:3].cpu().numpy()
-                Tw2c = pose_44[:3,3:].cpu().numpy()
-                yz_reverse = np.array([[1,0,0], [0,-1,0], [0,0,-1]])
+                Rw2c = pose_44[:3, :3].cpu().numpy()
+                Tw2c = pose_44[:3, 3:].cpu().numpy()
+                yz_reverse = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
 
                 Rc2w = np.matmul(yz_reverse, Rw2c).T
                 Tc2w = -np.matmul(Rc2w, np.matmul(yz_reverse, Tw2c))
                 Pc2w = np.concatenate((Rc2w, Tc2w), axis=1)
-                Pc2w = np.concatenate((Pc2w, np.array([[0,0,0,1]])), axis=0)  
+                Pc2w = np.concatenate((Pc2w, np.array([[0, 0, 0, 1]])), axis=0)
 
-                traindata['frames'].append({
-                    'image': functions.tensor_to_pil(inpainted_img),
-                    'transform_matrix': Pc2w.tolist(), 
-                    'fovx': focal2fov(256, inpainted_img.shape[-1]),
-                    'mesh_pose': mesh_pose
-                })
+                traindata["frames"].append(
+                    {
+                        "image": functions.tensor_to_pil(inpainted_img),
+                        "transform_matrix": Pc2w.tolist(),
+                        "fovx": focal2fov(256, inpainted_img.shape[-1]),
+                        "mesh_pose": mesh_pose,
+                    }
+                )
 
-
-        self.scene = Scene(traindata, self.gaussians, self.opt)   
+        self.scene = Scene(traindata, self.gaussians, self.opt)
         self.train_GS()
 
         # gaussian-only export
-        outfile = self.gaussians.save_ply(os.path.join(self.save_path, '3DGS.ply'))
+        outfile = self.gaussians.save_ply(os.path.join(self.save_path, "3DGS.ply"))
         print(f"[pano2room] gaussian PLY written to: {outfile}")
 
         # Eval GS
         evaldata = {
-            'camera_angle_x': self.cam.fov[0],
-            'W': self.W,
-            'H': self.H,
-            'frames': [],
+            "camera_angle_x": self.cam.fov[0],
+            "W": self.W,
+            "H": self.H,
+            "frames": [],
         }
 
         for i in range(len(self.poses)):
@@ -584,25 +752,28 @@ class Pano2RoomPipeline(torch.nn.Module):
 
             pose_44 = self.poses[i].clone()
             pose_44 = pose_44.float()
-            pose_44[0:1,:] *= -1
-            pose_44[1:2,:] *= -1
+            pose_44[0:1, :] *= -1
+            pose_44[1:2, :] *= -1
 
-            Rw2c = pose_44[:3,:3].cpu().numpy()
-            Tw2c = pose_44[:3,3:].cpu().numpy()
-            yz_reverse = np.array([[1,0,0], [0,-1,0], [0,0,-1]])
+            Rw2c = pose_44[:3, :3].cpu().numpy()
+            Tw2c = pose_44[:3, 3:].cpu().numpy()
+            yz_reverse = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
 
             Rc2w = np.matmul(yz_reverse, Rw2c).T
             Tc2w = -np.matmul(Rc2w, np.matmul(yz_reverse, Tw2c))
             Pc2w = np.concatenate((Rc2w, Tc2w), axis=1)
-            Pc2w = np.concatenate((Pc2w, np.array([[0,0,0,1]])), axis=0)                  
+            Pc2w = np.concatenate((Pc2w, np.array([[0, 0, 0, 1]])), axis=0)
 
-            evaldata['frames'].append({
-                'image': functions.tensor_to_pil(gt_img),
-                'transform_matrix': Pc2w.tolist(), 
-                'fovx': focal2fov(256, gt_img.shape[-1]),
-                'mesh_pose': self.poses[i].clone()
-            })
+            evaldata["frames"].append(
+                {
+                    "image": functions.tensor_to_pil(gt_img),
+                    "transform_matrix": Pc2w.tolist(),
+                    "fovx": focal2fov(256, gt_img.shape[-1]),
+                    "mesh_pose": self.poses[i].clone(),
+                }
+            )
         from scene.dataset_readers import loadCamerasFromData
+
         eval_GS_cams = loadCamerasFromData(evaldata, self.opt.white_background)
         self.eval_GS(eval_GS_cams)
 

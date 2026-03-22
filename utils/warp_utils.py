@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torchvision.utils import save_image
 from torchvision import transforms
 
+
 #######################
 # some helper I/O functions
 #######################
@@ -16,7 +17,7 @@ def image_to_tensor(img_path, unsqueeze=True):
 
 
 def disparity_to_tensor(disp_path, unsqueeze=True):
-    disp = cv2.imread(disp_path, -1) / (2 ** 16 - 1)
+    disp = cv2.imread(disp_path, -1) / (2**16 - 1)
     disp = torch.from_numpy(disp)[None, ...]
     if unsqueeze:
         disp = disp.unsqueeze(0)
@@ -46,7 +47,9 @@ def transformation_from_parameters(axisangle, translation, invert=False):
 
 
 def get_translation_matrix(translation_vector):
-    T = torch.zeros(translation_vector.shape[0], 4, 4).to(device=translation_vector.device)
+    T = torch.zeros(translation_vector.shape[0], 4, 4).to(
+        device=translation_vector.device
+    )
     t = translation_vector.contiguous().view(-1, 3, 1)
     T[:, 0, 0] = 1
     T[:, 1, 1] = 1
@@ -92,4 +95,3 @@ def rot_from_axisangle(vec):
     rot[:, 3, 3] = 1
 
     return rot
-

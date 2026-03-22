@@ -2,6 +2,8 @@ checkpoints/big-lama.ckpt
 checkpoints/omnidata_dpt_depth_v2.ckpt
 checkpoints/omnidata_dpt_normal_v2.ckpt
 
+pano2room.py.lprof
+
 input/*_input_panorama.png
 output/
 

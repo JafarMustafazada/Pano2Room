@@ -31,7 +31,11 @@ import torch.utils.checkpoint
 import transformers
 from accelerate import Accelerator
 from accelerate.logging import get_logger
-from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration, set_seed
+from accelerate.utils import (
+    DistributedDataParallelKwargs,
+    ProjectConfiguration,
+    set_seed,
+)
 from datasets import Dataset, DatasetDict, Image
 from packaging import version
 from peft import LoraConfig
@@ -41,7 +45,12 @@ from tqdm.auto import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
 
 import diffusers
-from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel
+from diffusers import (
+    AutoencoderKL,
+    DDPMScheduler,
+    StableDiffusionPipeline,
+    UNet2DConditionModel,
+)
 
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import compute_snr
@@ -81,16 +90,16 @@ def parse_args(input_args=None):
         help="Variant of the model files of the pretrained model identifier from huggingface.co/models, 'e.g.' fp16",
     )
     parser.add_argument(
-        "--image_column", 
-        type=str, 
-        default="image", 
-        help="The column of the dataset containing an image."
+        "--image_column",
+        type=str,
+        default="image",
+        help="The column of the dataset containing an image.",
     )
     parser.add_argument(
-        "--mask_column", 
-        type=str, 
-        default="mask_image", 
-        help="The column of the dataset containing an mask."
+        "--mask_column",
+        type=str,
+        default="mask_image",
+        help="The column of the dataset containing an mask.",
     )
     parser.add_argument(
         "--caption_column",
@@ -137,7 +146,9 @@ def parse_args(input_args=None):
         default="./cached",
         help="The directory where the downloaded models and datasets will be stored.",
     )
-    parser.add_argument("--seed", type=int, default=0, help="A seed for reproducible training.")
+    parser.add_argument(
+        "--seed", type=int, default=0, help="A seed for reproducible training."
+    )
     parser.add_argument(
         "--resolution",
         type=int,
@@ -164,16 +175,16 @@ def parse_args(input_args=None):
     )
     parser.add_argument(
         "--train_batch_size",
-        type=int, 
-        default=8, 
-        help="Batch size (per device) for the training dataloader."
+        type=int,
+        default=8,
+        help="Batch size (per device) for the training dataloader.",
     )
     parser.add_argument("--num_train_epochs", type=int, default=100)
     parser.add_argument(
         "--max_train_steps",
         type=int,
         default=None,
-        help="Total number of training steps to perform.  If provided, overrides num_train_epochs.", 
+        help="Total number of training steps to perform.  If provided, overrides num_train_epochs.",
     )
     parser.add_argument(
         "--checkpointing_steps",
@@ -219,7 +230,10 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
-        "--lr_warmup_steps", type=int, default=0, help="Number of steps for the warmup in the lr scheduler."
+        "--lr_warmup_steps",
+        type=int,
+        default=0,
+        help="Number of steps for the warmup in the lr scheduler.",
     )
     parser.add_argument(
         "--snr_gamma",
@@ -246,11 +260,30 @@ def parse_args(input_args=None):
         ),
     )
 
-    parser.add_argument("--adam_beta1", type=float, default=0.9, help="The beta1 parameter for the Adam optimizer.")
-    parser.add_argument("--adam_beta2", type=float, default=0.999, help="The beta2 parameter for the Adam optimizer.")
-    parser.add_argument("--adam_weight_decay", type=float, default=1e-2, help="Weight decay to use.")
-    parser.add_argument("--adam_epsilon", type=float, default=1e-08, help="Epsilon value for the Adam optimizer")
-    parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
+    parser.add_argument(
+        "--adam_beta1",
+        type=float,
+        default=0.9,
+        help="The beta1 parameter for the Adam optimizer.",
+    )
+    parser.add_argument(
+        "--adam_beta2",
+        type=float,
+        default=0.999,
+        help="The beta2 parameter for the Adam optimizer.",
+    )
+    parser.add_argument(
+        "--adam_weight_decay", type=float, default=1e-2, help="Weight decay to use."
+    )
+    parser.add_argument(
+        "--adam_epsilon",
+        type=float,
+        default=1e-08,
+        help="Epsilon value for the Adam optimizer",
+    )
+    parser.add_argument(
+        "--max_grad_norm", default=1.0, type=float, help="Max gradient norm."
+    )
     parser.add_argument(
         "--prediction_type",
         type=str,
@@ -286,12 +319,17 @@ def parse_args(input_args=None):
             " flag passed with the `accelerate.launch` command. Use this argument to override the accelerate config."
         ),
     )
-    parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     parser.add_argument(
-        "--enable_xformers_memory_efficient_attention", 
+        "--local_rank",
+        type=int,
+        default=-1,
+        help="For distributed training: local_rank",
+    )
+    parser.add_argument(
+        "--enable_xformers_memory_efficient_attention",
         type=bool,
         default=True,
-        help="Whether or not to use xformers."
+        help="Whether or not to use xformers.",
     )
     parser.add_argument(
         "--enable_lora",
@@ -353,9 +391,9 @@ def compute_vae_encodings(batch, vae):
 
     return {
         "model_input": model_input.cpu(),
-        "mask": mask.cpu(), 
+        "mask": mask.cpu(),
         "masked": masked.cpu(),
-        "input_ids": batch["input_ids"].cpu()
+        "input_ids": batch["input_ids"].cpu(),
     }
 
 
@@ -366,7 +404,9 @@ def main(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
     os.system(f"rm -rf {logging_dir}/*")
 
-    accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
+    accelerator_project_config = ProjectConfiguration(
+        project_dir=args.output_dir, logging_dir=logging_dir
+    )
 
     kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 
@@ -375,7 +415,7 @@ def main(args):
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
-        kwargs_handlers=[kwargs]
+        kwargs_handlers=[kwargs],
     )
 
     # Make one log on every process with the configuration for debugging.
@@ -404,18 +444,30 @@ def main(args):
             os.makedirs(args.output_dir, exist_ok=True)
 
     # Load scheduler, tokenizer and models.
-    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
+    noise_scheduler = DDPMScheduler.from_pretrained(
+        args.pretrained_model_name_or_path, subfolder="scheduler"
+    )
     tokenizer = CLIPTokenizer.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
+        args.pretrained_model_name_or_path,
+        subfolder="tokenizer",
+        revision=args.revision,
     )
     text_encoder = CLIPTextModel.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision
+        args.pretrained_model_name_or_path,
+        subfolder="text_encoder",
+        revision=args.revision,
     )
     vae = AutoencoderKL.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision, variant=args.variant
+        args.pretrained_model_name_or_path,
+        subfolder="vae",
+        revision=args.revision,
+        variant=args.variant,
     )
     unet = UNet2DConditionModel.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, variant=args.variant
+        args.pretrained_model_name_or_path,
+        subfolder="unet",
+        revision=args.revision,
+        variant=args.variant,
     )
     # freeze parameters of models to save more memory
     unet.requires_grad_(False)
@@ -447,7 +499,7 @@ def main(args):
     text_encoder.to(accelerator.device, dtype=weight_dtype)
 
     # Add adapter and make sure the trainable params are in float32.
-    if args.enable_lora: 
+    if args.enable_lora:
         unet.add_adapter(unet_lora_config)
     else:
         for name, param in unet.named_parameters():
@@ -470,7 +522,9 @@ def main(args):
                 )
             unet.enable_xformers_memory_efficient_attention()
         else:
-            raise ValueError("xformers is not available. Make sure it is installed correctly")
+            raise ValueError(
+                "xformers is not available. Make sure it is installed correctly"
+            )
 
     # Enable TF32 for faster training on Ampere GPUs,
     # cf https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices
@@ -479,7 +533,10 @@ def main(args):
 
     if args.scale_lr:
         args.learning_rate = (
-            args.learning_rate * args.gradient_accumulation_steps * args.train_batch_size * accelerator.num_processes
+            args.learning_rate
+            * args.gradient_accumulation_steps
+            * args.train_batch_size
+            * accelerator.num_processes
         )
 
     optimizer_class = torch.optim.AdamW
@@ -487,7 +544,7 @@ def main(args):
     # Optimizer creation
     params_to_optimize = []
     print("Parameter to optimize:")
-    print("="*60)
+    print("=" * 60)
     pnum = 0.0
     pnum_tr = 0.0
     for name, param in unet.named_parameters():
@@ -496,9 +553,9 @@ def main(args):
             print(name)
             pnum_tr += param.numel()
             params_to_optimize.append(param)
-    print("-"*60)
+    print("-" * 60)
     print(f"Total trainable parameters: {pnum_tr/1e6}M of {pnum/1e6}M.")
-    print("="*60)
+    print("=" * 60)
 
     optimizer = optimizer_class(
         params_to_optimize,
@@ -514,7 +571,7 @@ def main(args):
     image_list = sorted(glob(ospj(args.data_dir, "ref_rgb*.png")))
     mask_list = sorted(glob(ospj(args.data_dir, "warp_back_mask*.png")))
     text_list = ["" for _ in range(len(image_list))]
-    data_split = int(len(image_list)*args.data_split)
+    data_split = int(len(image_list) * args.data_split)
 
     train_data_dict = {
         "image": image_list[:data_split],
@@ -527,8 +584,16 @@ def main(args):
         "text": text_list[data_split:],
     }
 
-    dataset["train"] = Dataset.from_dict(train_data_dict).cast_column("image", Image()).cast_column("mask_image", Image())
-    dataset["eval"] = Dataset.from_dict(eval_data_dict).cast_column("image", Image()).cast_column("mask_image", Image())
+    dataset["train"] = (
+        Dataset.from_dict(train_data_dict)
+        .cast_column("image", Image())
+        .cast_column("mask_image", Image())
+    )
+    dataset["eval"] = (
+        Dataset.from_dict(eval_data_dict)
+        .cast_column("image", Image())
+        .cast_column("mask_image", Image())
+    )
 
     # Preprocessing the datasets.
     # We need to tokenize input captions and transform the images.
@@ -545,16 +610,30 @@ def main(args):
                     f"Caption column `{args.caption_column}` should contain either strings or lists of strings."
                 )
         inputs = tokenizer(
-            captions, max_length=tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt"
+            captions,
+            max_length=tokenizer.model_max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
         )
         return inputs.input_ids
 
     # Preprocessing the datasets.
     train_image_transforms = transforms.Compose(
         [
-            transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
-            transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution),
-            transforms.RandomHorizontalFlip() if args.random_flip else transforms.Lambda(lambda x: x),
+            transforms.Resize(
+                args.resolution, interpolation=transforms.InterpolationMode.BILINEAR
+            ),
+            (
+                transforms.CenterCrop(args.resolution)
+                if args.center_crop
+                else transforms.RandomCrop(args.resolution)
+            ),
+            (
+                transforms.RandomHorizontalFlip()
+                if args.random_flip
+                else transforms.Lambda(lambda x: x)
+            ),
             transforms.ToTensor(),
             transforms.Normalize([0.5], [0.5]),
         ]
@@ -562,10 +641,20 @@ def main(args):
 
     train_mask_transforms = transforms.Compose(
         [
-            transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
-            transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution),
-            transforms.RandomHorizontalFlip() if args.random_flip else transforms.Lambda(lambda x: x),
-            transforms.ToTensor()
+            transforms.Resize(
+                args.resolution, interpolation=transforms.InterpolationMode.BILINEAR
+            ),
+            (
+                transforms.CenterCrop(args.resolution)
+                if args.center_crop
+                else transforms.RandomCrop(args.resolution)
+            ),
+            (
+                transforms.RandomHorizontalFlip()
+                if args.random_flip
+                else transforms.Lambda(lambda x: x)
+            ),
+            transforms.ToTensor(),
         ]
     )
 
@@ -577,13 +666,15 @@ def main(args):
     def preprocess_train(examples):
         if "model_input" in examples:
             return examples
-        
+
         images = [image.convert("RGB") for image in examples[args.image_column]]
         mask_images = [mask.convert("L") for mask in examples[args.mask_column]]
 
         examples["pixel_values"] = [train_image_transforms(image) for image in images]
         examples["mask_images"] = [train_mask_transforms(mask) for mask in mask_images]
-        examples["input_ids"] = tokenize_captions(examples) # torch.zeros((len(images), 77), dtype=torch.int64)
+        examples["input_ids"] = tokenize_captions(
+            examples
+        )  # torch.zeros((len(images), 77), dtype=torch.int64)
 
         return examples
 
@@ -598,8 +689,8 @@ def main(args):
         train_dataset = train_dataset.map(
             compute_vae_encodings_fn,
             batched=True,
-            batch_size=args.train_batch_size, #* accelerator.num_processes * args.gradient_accumulation_steps,
-            new_fingerprint=new_fingerprint_for_vae
+            batch_size=args.train_batch_size,  # * accelerator.num_processes * args.gradient_accumulation_steps,
+            new_fingerprint=new_fingerprint_for_vae,
         )
 
     del vae
@@ -607,16 +698,20 @@ def main(args):
     torch.cuda.empty_cache()
 
     def collate_fn(examples):
-        model_input = torch.stack([torch.tensor(example["model_input"]) for example in examples])
+        model_input = torch.stack(
+            [torch.tensor(example["model_input"]) for example in examples]
+        )
         mask = torch.stack([torch.tensor(example["mask"]) for example in examples])
         masked = torch.stack([torch.tensor(example["masked"]) for example in examples])
-        input_ids = torch.stack([torch.tensor(example["input_ids"]) for example in examples])
+        input_ids = torch.stack(
+            [torch.tensor(example["input_ids"]) for example in examples]
+        )
 
         return {
             "model_input": model_input,
             "mask": mask,
             "masked": masked,
-            "input_ids": input_ids
+            "input_ids": input_ids,
         }
 
     # DataLoaders creation:
@@ -630,7 +725,9 @@ def main(args):
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    num_update_steps_per_epoch = math.ceil(
+        len(train_dataloader) / args.gradient_accumulation_steps
+    )
     if args.max_train_steps is None:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
@@ -648,7 +745,9 @@ def main(args):
     )
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    num_update_steps_per_epoch = math.ceil(
+        len(train_dataloader) / args.gradient_accumulation_steps
+    )
     if overrode_max_train_steps:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
@@ -660,13 +759,19 @@ def main(args):
         accelerator.init_trackers("fine-tune-sd2_lora", config=vars(args))
 
     # Train!
-    total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
+    total_batch_size = (
+        args.train_batch_size
+        * accelerator.num_processes
+        * args.gradient_accumulation_steps
+    )
 
     logger.info("***** Running training *****")
     logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(f"  Instantaneous batch size per device = {args.train_batch_size}")
-    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
+    logger.info(
+        f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}"
+    )
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
 
@@ -687,7 +792,7 @@ def main(args):
         unet.train()
         train_loss = 0.0
         for step, batch in enumerate(train_dataloader):
-            with accelerator.accumulate(unet): 
+            with accelerator.accumulate(unet):
                 # Sample noise that we'll add to the latents
                 model_input = batch["model_input"].to(accelerator.device)
                 mask = batch["mask"].to(accelerator.device)
@@ -698,36 +803,54 @@ def main(args):
                 bsz = model_input.shape[0]
                 # Sample a random timestep for each image without bias.
                 timesteps = torch.randint(
-                    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=model_input.device
+                    0,
+                    noise_scheduler.config.num_train_timesteps,
+                    (bsz,),
+                    device=model_input.device,
                 )
                 timesteps = timesteps.long()
 
                 # Add noise to the model input according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
-                noisy_model_input = noise_scheduler.add_noise(model_input, noise, timesteps)
+                noisy_model_input = noise_scheduler.add_noise(
+                    model_input, noise, timesteps
+                )
                 # Concat mask for inpainting
                 noisy_model_input = torch.cat([noisy_model_input, mask, masked], dim=1)
 
                 # Get the text embedding for conditioning
-                encoder_hidden_states = text_encoder(batch["input_ids"], return_dict=False)[0]
+                encoder_hidden_states = text_encoder(
+                    batch["input_ids"], return_dict=False
+                )[0]
 
                 # Predict the noise residual and compute loss
-                model_pred = unet(noisy_model_input, timesteps, encoder_hidden_states, return_dict=False)[0]
+                model_pred = unet(
+                    noisy_model_input,
+                    timesteps,
+                    encoder_hidden_states,
+                    return_dict=False,
+                )[0]
 
                 # Get the target for loss depending on the prediction type
                 if args.prediction_type is not None:
                     # set prediction_type of scheduler if defined
-                    noise_scheduler.register_to_config(prediction_type=args.prediction_type)
+                    noise_scheduler.register_to_config(
+                        prediction_type=args.prediction_type
+                    )
 
                 if noise_scheduler.config.prediction_type == "epsilon":
                     target = noise
                 elif noise_scheduler.config.prediction_type == "v_prediction":
                     target = noise_scheduler.get_velocity(model_input, noise, timesteps)
                 else:
-                    raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
+                    raise ValueError(
+                        f"Unknown prediction type {noise_scheduler.config.prediction_type}"
+                    )
 
                 if args.snr_gamma is None:
-                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+                    loss = F.mse_loss(
+                        model_pred.float(), target.float(), reduction="mean"
+                    )
                 else:
                     # Compute loss-weights as per Section 3.4 of https://arxiv.org/abs/2303.09556.
                     # Since we predict the noise instead of x_0, the original formulation is slightly changed.
@@ -737,11 +860,19 @@ def main(args):
                         # Velocity objective requires that we add one to SNR values before we divide by them.
                         snr = snr + 1
                     mse_loss_weights = (
-                        torch.stack([snr, args.snr_gamma * torch.ones_like(timesteps)], dim=1).min(dim=1)[0] / snr
+                        torch.stack(
+                            [snr, args.snr_gamma * torch.ones_like(timesteps)], dim=1
+                        ).min(dim=1)[0]
+                        / snr
                     )
 
-                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
-                    loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
+                    loss = F.mse_loss(
+                        model_pred.float(), target.float(), reduction="none"
+                    )
+                    loss = (
+                        loss.mean(dim=list(range(1, len(loss.shape))))
+                        * mse_loss_weights
+                    )
                     loss = loss.mean()
 
                 # Gather the losses across all processes for logging (if we use distributed training).
@@ -763,7 +894,10 @@ def main(args):
                 accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
-            logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
+            logs = {
+                "step_loss": loss.detach().item(),
+                "lr": lr_scheduler.get_last_lr()[0],
+            }
             progress_bar.set_postfix(**logs)
 
             if global_step >= args.max_train_steps:
@@ -776,7 +910,9 @@ def main(args):
         unwrapped_unet = unwrap_model(unet)
 
         if args.enable_lora:
-            unet_lora_state_dict = convert_state_dict_to_diffusers(get_peft_model_state_dict(unwrapped_unet))
+            unet_lora_state_dict = convert_state_dict_to_diffusers(
+                get_peft_model_state_dict(unwrapped_unet)
+            )
             StableDiffusionPipeline.save_lora_weights(
                 save_directory=args.output_dir,
                 unet_lora_layers=unet_lora_state_dict,
@@ -796,6 +932,7 @@ def main(args):
         torch.cuda.empty_cache()
 
     accelerator.end_training()
+
 
 if __name__ == "__main__":
     args = parse_args()

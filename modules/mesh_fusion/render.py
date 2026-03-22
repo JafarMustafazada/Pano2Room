@@ -12,7 +12,7 @@ from modules.mesh_fusion.util import (
     torch_to_o3d_mesh,
     torch_to_trimesh,
     trimesh_to_torch,
-    o3d_to_trimesh
+    o3d_to_trimesh,
 )
 
 from pytorch3d.structures import Meshes
@@ -29,7 +29,14 @@ from pytorch3d.renderer.blending import hard_rgb_blend, softmax_rgb_blend
 import math
 
 
-def clean_mesh(vertices: torch.Tensor, faces: torch.Tensor, colors: torch.Tensor, edge_threshold: float = 0.1, min_triangles_connected: int = -1, fill_holes: bool = True) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+def clean_mesh(
+    vertices: torch.Tensor,
+    faces: torch.Tensor,
+    colors: torch.Tensor,
+    edge_threshold: float = 0.1,
+    min_triangles_connected: int = -1,
+    fill_holes: bool = True,
+) -> (torch.Tensor, torch.Tensor, torch.Tensor):
     """
     Performs the following steps to clean the mesh:
 
@@ -60,10 +67,14 @@ def clean_mesh(vertices: torch.Tensor, faces: torch.Tensor, colors: torch.Tensor
 
     if min_triangles_connected > 0:
         # remove small components via open3d
-        triangle_clusters, cluster_n_triangles, cluster_area = mesh.cluster_connected_triangles()
+        triangle_clusters, cluster_n_triangles, cluster_area = (
+            mesh.cluster_connected_triangles()
+        )
         triangle_clusters = np.asarray(triangle_clusters)
         cluster_n_triangles = np.asarray(cluster_n_triangles)
-        triangles_to_remove = cluster_n_triangles[triangle_clusters] < min_triangles_connected
+        triangles_to_remove = (
+            cluster_n_triangles[triangle_clusters] < min_triangles_connected
+        )
         mesh.remove_triangles_by_mask(triangles_to_remove)
 
     # cleanup via open3d
@@ -97,7 +108,9 @@ def edge_threshold_filter(vertices, faces, edge_threshold=0.1):
     d02 = torch.linalg.vector_norm(p0 - p2, dim=0)
     d12 = torch.linalg.vector_norm(p1 - p2, dim=0)
 
-    mask_small_edge = (d01 < edge_threshold) * (d02 < edge_threshold) * (d12 < edge_threshold)
+    mask_small_edge = (
+        (d01 < edge_threshold) * (d02 < edge_threshold) * (d12 < edge_threshold)
+    )
     faces = faces[:, mask_small_edge]
 
     return faces
@@ -109,10 +122,10 @@ def calculate_face_normal(vertices, faces):
     Vertices has shape [N, 3], faces has shape [M, 3]
     Output has shape [M, 3].
     """
-    face_pos = vertices[[faces]] #shape [M, 3, 3]
+    face_pos = vertices[[faces]]  # shape [M, 3, 3]
 
     BA = face_pos[:, 1] - face_pos[:, 0]
-    BA = BA / torch.norm(BA, dim=-1, keepdim=True) # Prevent too small values
+    BA = BA / torch.norm(BA, dim=-1, keepdim=True)  # Prevent too small values
     CA = face_pos[:, 2] - face_pos[:, 0]
     CA = CA / torch.norm(CA, dim=-1, keepdim=True)
 
@@ -123,7 +136,16 @@ def calculate_face_normal(vertices, faces):
     return normals
 
 
-def surface_normal_filter(vertices, faces, H, W, world_to_cam, fov_in_degrees, surface_normal_threshold=0.1, pix_to_face=None):
+def surface_normal_filter(
+    vertices,
+    faces,
+    H,
+    W,
+    world_to_cam,
+    fov_in_degrees,
+    surface_normal_threshold=0.1,
+    pix_to_face=None,
+):
     """
     Only keep faces where the dot product between surface normal and viewing direction is larger than the threshold.
     Will remove stretch artifacts that are caused by bad viewing angles towards surfaces.
@@ -144,11 +166,15 @@ def surface_normal_filter(vertices, faces, H, W, world_to_cam, fov_in_degrees, s
     """
 
     # calculate face normals
-    surface_normal = calculate_face_normal(vertices.permute(1, 0), faces.permute(1, 0))  # [faces_number, 3]
+    surface_normal = calculate_face_normal(
+        vertices.permute(1, 0), faces.permute(1, 0)
+    )  # [faces_number, 3]
 
     # Get view directions
     depth = torch.ones((H, W)).to(vertices)
-    world_points = unproject_points(world_to_cam, fov_in_degrees, depth, H, W).permute(1, 0)
+    world_points = unproject_points(world_to_cam, fov_in_degrees, depth, H, W).permute(
+        1, 0
+    )
     camera = get_camera(world_to_cam, fov_in_degrees)
     camera_center = camera.get_camera_center()
     view_direction = world_points - camera_center
@@ -156,7 +182,9 @@ def surface_normal_filter(vertices, faces, H, W, world_to_cam, fov_in_degrees, s
 
     if pix_to_face is None:
         # use center view direction since we do not know which face maps to which pixel
-        select_view_direction = view_direction[view_direction.shape[0] // 2].unsqueeze(0)
+        select_view_direction = view_direction[view_direction.shape[0] // 2].unsqueeze(
+            0
+        )
         dot_map = torch.sum(select_view_direction * surface_normal, dim=-1)
         dot_map = torch.abs(dot_map)
     else:
@@ -164,19 +192,37 @@ def surface_normal_filter(vertices, faces, H, W, world_to_cam, fov_in_degrees, s
         pix_to_face = pix_to_face.squeeze()
         invalid_mask = pix_to_face < 0
         pix_to_face[invalid_mask] = 0  # for indexing to work, but gets filtered later
-        pix_to_surface_normal = surface_normal[pix_to_face]  # (H, W, faces_per_pixel, 3)
-        view_direction = view_direction.reshape(H, W, 3).unsqueeze(-2).repeat(1, 1, pix_to_surface_normal.shape[2], 1)  # (H, W, faces_per_pixel, 3)
-        dot_map = (pix_to_surface_normal * view_direction).sum(dim=-1).abs()  # (H, W, faces_per_pixel)
+        pix_to_surface_normal = surface_normal[
+            pix_to_face
+        ]  # (H, W, faces_per_pixel, 3)
+        view_direction = (
+            view_direction.reshape(H, W, 3)
+            .unsqueeze(-2)
+            .repeat(1, 1, pix_to_surface_normal.shape[2], 1)
+        )  # (H, W, faces_per_pixel, 3)
+        dot_map = (
+            (pix_to_surface_normal * view_direction).sum(dim=-1).abs()
+        )  # (H, W, faces_per_pixel)
 
         # a face can be used in multiple pixels, so final dot product is the average from all pixels
-        per_face_dot_product_sum = torch.zeros(faces.shape[1], device=faces.device)  # (M)
-        per_face_observed_count = torch.zeros(faces.shape[1], device=faces.device)  # (M)
+        per_face_dot_product_sum = torch.zeros(
+            faces.shape[1], device=faces.device
+        )  # (M)
+        per_face_observed_count = torch.zeros(
+            faces.shape[1], device=faces.device
+        )  # (M)
 
         # add contribution to the specified face positions
-        index = pix_to_face[~invalid_mask].flatten()  # M * (H, W, faces_per_pixel) --> (P)
-        dot_map = dot_map[~invalid_mask].flatten()  # M * (H, W, faces_per_pixel) --> (P)
+        index = pix_to_face[
+            ~invalid_mask
+        ].flatten()  # M * (H, W, faces_per_pixel) --> (P)
+        dot_map = dot_map[
+            ~invalid_mask
+        ].flatten()  # M * (H, W, faces_per_pixel) --> (P)
         per_face_dot_product_sum.scatter_add_(dim=0, index=index, src=dot_map)
-        per_face_observed_count.scatter_add_(dim=0, index=index, src=torch.ones_like(dot_map))
+        per_face_observed_count.scatter_add_(
+            dim=0, index=index, src=torch.ones_like(dot_map)
+        )
 
         # compute final average
         dot_map = per_face_dot_product_sum / per_face_observed_count.clamp(min=1e-8)
@@ -186,7 +232,20 @@ def surface_normal_filter(vertices, faces, H, W, world_to_cam, fov_in_degrees, s
 
     return faces, faces_remove_mask
 
-def features_to_world_space_mesh(colors, depth, fov_in_degrees, world_to_cam, mask=None, edge_threshold=0.1, surface_normal_threshold=-1, pix_to_face=None, faces=None, vertices=None, using_distance_map=False):
+
+def features_to_world_space_mesh(
+    colors,
+    depth,
+    fov_in_degrees,
+    world_to_cam,
+    mask=None,
+    edge_threshold=0.1,
+    surface_normal_threshold=-1,
+    pix_to_face=None,
+    faces=None,
+    vertices=None,
+    using_distance_map=False,
+):
     """
     project features to mesh in world space and return (vertices, faces, colors) result by applying simple triangulation from image-structure.
 
@@ -214,38 +273,43 @@ def features_to_world_space_mesh(colors, depth, fov_in_degrees, world_to_cam, ma
     colors = colors.reshape(C, -1)
     if using_distance_map:
         world_space_points = unproject_points_distance(depth.cpu())
-        world_space_points = torch.Tensor(world_space_points).permute(1,0).cuda() # [3,N]
-        world_space_points -= world_to_cam[:3,3].unsqueeze(-1).repeat(1, world_space_points.shape[1])
+        world_space_points = (
+            torch.Tensor(world_space_points).permute(1, 0).cuda()
+        )  # [3,N]
+        world_space_points -= (
+            world_to_cam[:3, 3].unsqueeze(-1).repeat(1, world_space_points.shape[1])
+        )
     else:
         world_space_points = unproject_points(world_to_cam, fov_in_degrees, depth, H, W)
 
     # define vertex_ids for triangulation
-    '''
+    """
     00---01
     |    |
     10---11
-    '''
-    vertex_ids = torch.arange(H*W).reshape(H, W).to(colors.device)
-    vertex_00 = remapped_vertex_00 = vertex_ids[:H-1, :W-1]
-    vertex_01 = remapped_vertex_01 = (remapped_vertex_00 + 1)
-    vertex_10 = remapped_vertex_10 = (remapped_vertex_00 + W)
-    vertex_11 = remapped_vertex_11 = (remapped_vertex_00 + W + 1)
+    """
+    vertex_ids = torch.arange(H * W).reshape(H, W).to(colors.device)
+    vertex_00 = remapped_vertex_00 = vertex_ids[: H - 1, : W - 1]
+    vertex_01 = remapped_vertex_01 = remapped_vertex_00 + 1
+    vertex_10 = remapped_vertex_10 = remapped_vertex_00 + W
+    vertex_11 = remapped_vertex_11 = remapped_vertex_00 + W + 1
 
     if mask is not None:
+
         def dilate(x, k=3):
             x = torch.nn.functional.conv2d(
                 x.float()[None, None, ...],
                 torch.ones(1, 1, k, k).to(mask.device),
-                padding="same"
+                padding="same",
             )
             return x.squeeze() > 0
 
         # need dilated mask for "connecting vertices", e.g. face at the mask-edge connected to next masked-out vertex
-        '''
+        """
         x---x---o
         | / | / |  
         x---o---o
-        '''
+        """
         # mask_dilated = dilate(mask, k=5)
         mask_dilated = mask > 0
 
@@ -254,9 +318,11 @@ def features_to_world_space_mesh(colors, depth, fov_in_degrees, world_to_cam, ma
 
         # remap vertex id's to shortened list of vertices
         remap = torch.bucketize(vertex_ids, vertex_ids[mask_dilated])
-        remap[~mask_dilated] = -1  # mark invalid vertex_ids with -1 --> due to dilation + triangulation, a few faces will contain -1 values --> need to filter them
+        remap[~mask_dilated] = (
+            -1
+        )  # mark invalid vertex_ids with -1 --> due to dilation + triangulation, a few faces will contain -1 values --> need to filter them
         remap = remap.flatten()
-        mask_dilated = mask_dilated[:H-1, :W-1]
+        mask_dilated = mask_dilated[: H - 1, : W - 1]
         vertex_00 = vertex_00[mask_dilated]
         vertex_01 = vertex_01[mask_dilated]
         vertex_10 = vertex_10[mask_dilated]
@@ -268,12 +334,20 @@ def features_to_world_space_mesh(colors, depth, fov_in_degrees, world_to_cam, ma
 
     # triangulation: upper-left and lower-right triangles from image structure
     faces_upper_left_triangle = torch.stack(
-        [remapped_vertex_00.flatten(), remapped_vertex_10.flatten(), remapped_vertex_01.flatten()],  # counter-clockwise orientation
-        dim=0
+        [
+            remapped_vertex_00.flatten(),
+            remapped_vertex_10.flatten(),
+            remapped_vertex_01.flatten(),
+        ],  # counter-clockwise orientation
+        dim=0,
     )
     faces_lower_right_triangle = torch.stack(
-        [remapped_vertex_10.flatten(), remapped_vertex_11.flatten(), remapped_vertex_01.flatten()],  # counter-clockwise orientation
-        dim=0
+        [
+            remapped_vertex_10.flatten(),
+            remapped_vertex_11.flatten(),
+            remapped_vertex_01.flatten(),
+        ],  # counter-clockwise orientation
+        dim=0,
     )
 
     # filter faces with -1 vertices and combine
@@ -283,7 +357,6 @@ def features_to_world_space_mesh(colors, depth, fov_in_degrees, world_to_cam, ma
     faces_lower_right_triangle = faces_lower_right_triangle[:, mask_lower_right]
     faces = torch.cat([faces_upper_left_triangle, faces_lower_right_triangle], dim=1)
 
-
     # clean mesh
     world_space_points, faces, colors = clean_mesh(
         world_space_points,
@@ -291,7 +364,7 @@ def features_to_world_space_mesh(colors, depth, fov_in_degrees, world_to_cam, ma
         colors,
         edge_threshold=edge_threshold,
         min_triangles_connected=-1,
-        fill_holes=True
+        fill_holes=True,
     )
 
     return world_space_points, faces, colors
@@ -311,7 +384,17 @@ class VertexColorShader(ShaderBase):
             return hard_rgb_blend(texels, fragments, blend_params)
 
 
-def render_mesh(vertices, faces, vertex_features, H, W, fov_in_degrees, RT, blur_radius=0.0, faces_per_pixel=1):
+def render_mesh(
+    vertices,
+    faces,
+    vertex_features,
+    H,
+    W,
+    fov_in_degrees,
+    RT,
+    blur_radius=0.0,
+    faces_per_pixel=1,
+):
     """
     Renders a mesh using its vertex-features (e.g. rgb colors) into a novel view-point.
 
@@ -349,22 +432,19 @@ def render_mesh(vertices, faces, vertex_features, H, W, fov_in_degrees, RT, blur
         faces_per_pixel=faces_per_pixel,
         clip_barycentric_coords=True,
         cull_backfaces=False,
-        z_clip_value=0
+        z_clip_value=0,
     )
 
     # Create a renderer by composing a rasterizer and a shader
     # We simply render vertex colors through the custom VertexColorShader (no lighting, materials are used)
     renderer = MeshRendererWithFragments(
-        rasterizer=MeshRasterizer(
-            cameras=camera,
-            raster_settings=raster_settings
-        ),
+        rasterizer=MeshRasterizer(cameras=camera, raster_settings=raster_settings),
         shader=VertexColorShader(
             blend_soft=False,
             device=RT.device,
             cameras=camera,
-            blend_params=blend_params
-        )
+            blend_params=blend_params,
+        ),
     )
 
     # Create a depth shader
@@ -377,6 +457,11 @@ def render_mesh(vertices, faces, vertex_features, H, W, fov_in_degrees, RT, blur
     mask = (fragments.pix_to_face[..., 0] < 0).squeeze()
     depth[mask] = 0
 
-    return images[0].permute(2, 0, 1), depth, mask, fragments.pix_to_face, fragments.zbuf, mesh
-
-
+    return (
+        images[0].permute(2, 0, 1),
+        depth,
+        mask,
+        fragments.pix_to_face,
+        fragments.zbuf,
+        mesh,
+    )

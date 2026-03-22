@@ -4,10 +4,16 @@ import torch
 import trimesh
 
 from utils.camera_utils import *
-from modules.geo_predictors import PanoFusionInvPredictor, PanoFusionNormalPredictor, PanoGeoRefiner, PanoJointPredictor
+from modules.geo_predictors import (
+    PanoFusionInvPredictor,
+    PanoFusionNormalPredictor,
+    PanoGeoRefiner,
+    PanoJointPredictor,
+)
 
 import torchvision
 from PIL import Image
+
 
 class PanoFusionDistance:
     def __init__(self):
@@ -21,7 +27,7 @@ class PanoFusionDistance:
         self.ref_normal = None
         self.pano_width, self.pano_height = 2048, 1024
         self.data_dir = None
-        self.case_name = 'wp'
+        self.case_name = "wp"
 
     def get_ref_distance(self):
         assert self.image is not None
@@ -34,17 +40,21 @@ class PanoFusionDistance:
             ref_distance = torch.from_numpy(ref_distance.astype(np.float32)).cuda()
         else:
             distance_predictor = PanoFusionInvPredictor()
-            ref_distance, _ = distance_predictor(self.image,
-                                                 torch.zeros([self.height, self.width]),
-                                                 torch.ones([self.height, self.width]))
+            ref_distance, _ = distance_predictor(
+                self.image,
+                torch.zeros([self.height, self.width]),
+                torch.ones([self.height, self.width]),
+            )
         return ref_distance
 
     def get_ref_normal(self):
 
         normal_predictor = PanoFusionNormalPredictor()
-        ref_normal = normal_predictor.inpaint_normal(self.image,
-                                                        torch.ones([self.height, self.width, 3]) / np.sqrt(3.),
-                                                        torch.ones([self.height, self.width]))
+        ref_normal = normal_predictor.inpaint_normal(
+            self.image,
+            torch.ones([self.height, self.width, 3]) / np.sqrt(3.0),
+            torch.ones([self.height, self.width]),
+        )
 
         return ref_normal
 
@@ -56,9 +66,12 @@ class PanoFusionDistance:
 
         joint_predictor = PanoJointPredictor()
         idx = 0
-        ref_distance, ref_normal = joint_predictor(idx, self.image,
-                                                    torch.ones([self.pano_height, self.pano_width, 1]),
-                                                    torch.ones([self.pano_height, self.pano_width]))
+        ref_distance, ref_normal = joint_predictor(
+            idx,
+            self.image,
+            torch.ones([self.pano_height, self.pano_width, 1]),
+            torch.ones([self.pano_height, self.pano_width]),
+        )
 
         return ref_distance, ref_normal
 
@@ -73,20 +86,28 @@ class PanoFusionDistance:
             np.save(self.ref_normal_path, self.ref_normal.cpu().numpy())
 
         # Save point cloud
-        pano_dirs = img_coord_to_pano_direction(img_coord_from_hw(self.height, self.width))
+        pano_dirs = img_coord_to_pano_direction(
+            img_coord_from_hw(self.height, self.width)
+        )
         pts = pano_dirs * self.ref_distance.squeeze()[..., None]
         pts = pts.cpu().numpy().reshape(-1, 3)
         if self.image is not None:
-            pcd = trimesh.PointCloud(pts, vertex_colors=self.image.reshape(-1, 3).cpu().numpy())
+            pcd = trimesh.PointCloud(
+                pts, vertex_colors=self.image.reshape(-1, 3).cpu().numpy()
+            )
         else:
             pcd = trimesh.PointCloud(pts)
 
-        assert self.ref_geometry_path is not None and self.ref_geometry_path[-4:] == '.ply'
+        assert (
+            self.ref_geometry_path is not None and self.ref_geometry_path[-4:] == ".ply"
+        )
         pcd.export(self.ref_geometry_path)
 
     @torch.no_grad()
     def ref_point_cloud(self):
-        pano_dirs = img_coord_to_pano_direction(img_coord_from_hw(self.height, self.width))
+        pano_dirs = img_coord_to_pano_direction(
+            img_coord_from_hw(self.height, self.width)
+        )
         pts = pano_dirs * self.ref_distance.squeeze()[..., None]
         return pts
 
@@ -94,12 +115,21 @@ class PanoFusionDistance:
 class PanoFusionDistancePredictor(PanoFusionDistance):
     def __init__(self):
         super().__init__()
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
-    def predict(self, pano_tensor, init_distance=None, init_mask=None, pano_width=2048, pano_height=1024):
+    def predict(
+        self,
+        pano_tensor,
+        init_distance=None,
+        init_mask=None,
+        pano_width=2048,
+        pano_height=1024,
+    ):
         self.pano_width, self.pano_height = pano_width, pano_height
         self.image = pano_tensor.cuda()
 
-        self.ref_distance, self.ref_normal = self.get_joint_distance_normal(init_distance, init_mask)
-        
+        self.ref_distance, self.ref_normal = self.get_joint_distance_normal(
+            init_distance, init_mask
+        )
+
         return self.ref_distance.squeeze(-1)

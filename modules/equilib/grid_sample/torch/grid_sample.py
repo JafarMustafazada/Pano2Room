@@ -44,9 +44,7 @@ def grid_sample(
     if backend == "native":
         if out is not None:
             # NOTE: out is created
-            warnings.warn(
-                "don't need to pass preallocated `out` to `grid_sample`"
-            )
+            warnings.warn("don't need to pass preallocated `out` to `grid_sample`")
         assert img.device == grid.device, (
             f"ERR: when using {backend}, the devices of `img` and `grid` need"
             "to be on the same device"
@@ -65,9 +63,7 @@ def grid_sample(
         # this warning and will put `grid` onto the same device until a fix is found
         # if grid.device.type == "cuda":
         #     warnings.warn("input `grid` should be on the cpu, but got a cuda tensor")
-        assert (
-            out is not None
-        ), "ERR: need to pass reference to `out`, but got None"
+        assert out is not None, "ERR: need to pass reference to `out`, but got None"
         assert img.device == grid.device, (
             f"ERR: when using {backend}, the devices of `img` and `grid` need"
             "to be on the same device"

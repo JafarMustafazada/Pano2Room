@@ -128,9 +128,7 @@ def _equirect_facetype(h: int, w: int) -> np.ndarray:
     w_ratio = (w - 1) / w
     h_ratio = (h - 1) / h
 
-    tp = np.roll(
-        np.arange(4).repeat(w // 4)[None, :].repeat(h, 0), 3 * w // 8, 1
-    )
+    tp = np.roll(np.arange(4).repeat(w // 4)[None, :].repeat(h, 0), 3 * w // 8, 1)
 
     # Prepare ceil mask
     mask = np.zeros((h, w // 4), bool)
@@ -157,9 +155,7 @@ def create_equi_grid(
 
     w_ratio = (w_out - 1) / w_out
     h_ratio = (h_out - 1) / h_out
-    theta = np.linspace(
-        -(np.pi * w_ratio), np.pi * w_ratio, num=w_out, dtype=dtype
-    )
+    theta = np.linspace(-(np.pi * w_ratio), np.pi * w_ratio, num=w_out, dtype=dtype)
     phi = np.linspace(
         np.pi * h_ratio / 2, -(np.pi * h_ratio) / 2, num=h_out, dtype=dtype
     )
@@ -227,10 +223,7 @@ def numpy_grid_sample(
 
         for y in range(grid_h):
             for x in range(grid_w):
-                if (
-                    cube_face_max_grid[i, 1, y, x]
-                    != cube_face_min_grid[i, 1, y, x]
-                ):
+                if cube_face_max_grid[i, 1, y, x] != cube_face_min_grid[i, 1, y, x]:
                     if cube_face_max_grid[i, 1, y, x] != cube_face_id[y, x]:
                         max_grid[i, 1, y, x] -= 1
                     else:
@@ -290,9 +283,7 @@ def run(
     # and float is in range of 0.0-1.0; later we will refine it
     # NOTE: for the sake of consistency, we will try to use the same dtype as horizon
     dtype = (
-        np.dtype(np.float32)
-        if horizon_dtype == np.dtype(np.uint8)
-        else horizon_dtype
+        np.dtype(np.float32) if horizon_dtype == np.dtype(np.uint8) else horizon_dtype
     )
     assert dtype in (np.float32, np.float64), (
         f"ERR: argument `dtype` is {dtype} which is incompatible:\n"
@@ -311,14 +302,10 @@ def run(
 
     # grid sample
     if override_func is not None:
-        out = override_func(  # type: ignore
-            img=horizon, grid=grid, out=out, mode=mode
-        )
+        out = override_func(img=horizon, grid=grid, out=out, mode=mode)  # type: ignore
     else:
         # out = numpy_grid_sample(img=horizon, grid=grid, out=out, mode=mode)
-        out = numpy_grid_sample(
-            img=horizon, grid=grid, out=out, cube_face_id=tp
-        )
+        out = numpy_grid_sample(img=horizon, grid=grid, out=out, cube_face_id=tp)
 
     out = (
         out.astype(horizon_dtype)

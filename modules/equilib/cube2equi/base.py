@@ -120,16 +120,12 @@ def cube2equi(
     assert _type is not None, "ERR: input type is not numpy or torch"
 
     if _type == "numpy":
-        horizon = convert2horizon_numpy(
-            cubemap=cubemap, cube_format=cube_format
-        )
+        horizon = convert2horizon_numpy(cubemap=cubemap, cube_format=cube_format)
         out = run_numpy(
             horizon=horizon, height=height, width=width, mode=mode, **kwargs
         )
     elif _type == "torch":
-        horizon = convert2horizon_torch(
-            cubemap=cubemap, cube_format=cube_format
-        )
+        horizon = convert2horizon_torch(cubemap=cubemap, cube_format=cube_format)
 
         out = run_torch(
             horizon=horizon, height=height, width=width, mode=mode, **kwargs

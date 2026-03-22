@@ -3,7 +3,8 @@ from torch.autograd import Variable
 import numpy as np
 import collections
 
-__all__ = ['as_variable', 'as_numpy', 'mark_volatile']
+__all__ = ["as_variable", "as_numpy", "mark_volatile"]
+
 
 def as_variable(obj):
     if isinstance(obj, Variable):
@@ -14,6 +15,7 @@ def as_variable(obj):
         return {k: as_variable(v) for k, v in obj.items()}
     else:
         return Variable(obj)
+
 
 def as_numpy(obj):
     if isinstance(obj, collections.Sequence):
@@ -26,6 +28,7 @@ def as_numpy(obj):
         return obj.cpu().numpy()
     else:
         return np.array(obj)
+
 
 def mark_volatile(obj):
     if torch.is_tensor(obj):

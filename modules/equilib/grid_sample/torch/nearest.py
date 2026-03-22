@@ -5,9 +5,7 @@ import torch
 __all__ = ["nearest"]
 
 
-def nearest(
-    img: torch.Tensor, grid: torch.Tensor, out: torch.Tensor
-) -> torch.Tensor:
+def nearest(img: torch.Tensor, grid: torch.Tensor, out: torch.Tensor) -> torch.Tensor:
     """Nearest Neighbor Interpolation
 
     Merit of using this nearest instead is that the grid doesn't need to be a

@@ -18,13 +18,13 @@ class Scene:
     def __init__(self, traindata, gaussians: GaussianModel, opt: GSParams):
         self.traindata = traindata
         self.gaussians = gaussians
-        
+
         info = readDataInfo(traindata, opt.white_background)
         # random.shuffle(info.train_cameras)  # Multi-res consistent random shuffling
         self.cameras_extent = info.nerf_normalization["radius"]
 
         print("Loading Training Cameras")
-        self.train_cameras = info.train_cameras        
+        self.train_cameras = info.train_cameras
         print("Loading Preset Cameras")
         self.preset_cameras = {}
         for campath in info.preset_cameras.keys():
@@ -35,7 +35,7 @@ class Scene:
 
     def getTrainCameras(self):
         return self.train_cameras
-    
+
     def getPresetCameras(self, preset):
         assert preset in self.preset_cameras
         return self.preset_cameras[preset]

@@ -17,9 +17,7 @@ def cube_hsplits(cube_h: torch.Tensor) -> List[torch.Tensor]:
     """Returns list of horizontal splits (doesn't split batch)"""
     assert cube_h.shape[-2] * 6 == cube_h.shape[-1]
     # order ["F", "R", "B", "L", "U", "D"]
-    splits = torch.split(
-        cube_h, split_size_or_sections=cube_h.shape[-2], dim=-1
-    )
+    splits = torch.split(cube_h, split_size_or_sections=cube_h.shape[-2], dim=-1)
     assert len(splits) == 6
     assert splits[0].shape == (*cube_h.shape[0:3], cube_h.shape[-2])
     return splits
@@ -31,9 +29,7 @@ def cube_h2list(cube_h: torch.Tensor) -> List[List[torch.Tensor]]:
     for b in range(bs):
         cube_lists.append(
             list(
-                torch.split(
-                    cube_h[b], split_size_or_sections=cube_h.shape[-2], dim=-1
-                )
+                torch.split(cube_h[b], split_size_or_sections=cube_h.shape[-2], dim=-1)
             )
         )
     return cube_lists
@@ -68,9 +64,9 @@ def cube_h2dice(cube_h: torch.Tensor) -> torch.Tensor:
     sxy = [(1, 1), (2, 1), (3, 1), (0, 1), (1, 0), (1, 2)]
     for b in range(bs):
         for i, (sx, sy) in enumerate(sxy):
-            cube_dice[
-                b, :, sy * w : (sy + 1) * w, sx * w : (sx + 1) * w
-            ] = cube_list[i][b, ...].clone()
+            cube_dice[b, :, sy * w : (sy + 1) * w, sx * w : (sx + 1) * w] = cube_list[
+                i
+            ][b, ...].clone()
 
     return cube_dice
 
@@ -188,9 +184,7 @@ def run(
         # NOTE: don't need to initialize for `native`
         out = None
     else:
-        out = torch.empty(
-            (bs, c, w_face, w_face * 6), dtype=dtype, device=img_device
-        )
+        out = torch.empty((bs, c, w_face, w_face * 6), dtype=dtype, device=img_device)
 
     # FIXME: for now, calculate the grid in cpu
     # I need to benchmark performance of it when grid is created on cuda
@@ -201,9 +195,7 @@ def run(
         tmp_dtype = dtype
 
     # create grid
-    xyz = create_xyz_grid(
-        w_face=w_face, batch=bs, dtype=tmp_dtype, device=tmp_device
-    )
+    xyz = create_xyz_grid(w_face=w_face, batch=bs, dtype=tmp_dtype, device=tmp_device)
     xyz = xyz.unsqueeze(-1)
 
     # FIXME: not sure why, but z-axis is facing the opposite
@@ -230,9 +222,7 @@ def run(
         grid = grid.to(equi.device)
 
     # grid sample
-    out = torch_grid_sample(
-        img=equi, grid=grid, out=out, mode=mode, backend=backend
-    )
+    out = torch_grid_sample(img=equi, grid=grid, out=out, mode=mode, backend=backend)
 
     out = (
         out.type(equi_dtype)

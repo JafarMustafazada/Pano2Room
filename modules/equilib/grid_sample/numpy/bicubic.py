@@ -14,10 +14,7 @@ def kernel(
     mask2 = np.logical_and(1 < s, s <= 2)
     out[mask1] = (a + 2) * (s[mask1] ** 3) - (a + 3) * (s[mask1] ** 2) + 1
     out[mask2] = (
-        a * (s[mask2] ** 3)
-        - (5 * a) * (s[mask2] ** 2)
-        + (8 * a) * s[mask2]
-        - 4 * a
+        a * (s[mask2] ** 3) - (5 * a) * (s[mask2] ** 2) + (8 * a) * s[mask2] - 4 * a
     )
     return out
 
@@ -116,9 +113,7 @@ def bicubic(img: np.ndarray, grid: np.ndarray, out: np.ndarray) -> np.ndarray:
             axis=-1,
         )
 
-        mat_m[b, ...] = np.stack(
-            [mat_m_x1, mat_m_x2, mat_m_x3, mat_m_x4], axis=-2
-        )
+        mat_m[b, ...] = np.stack([mat_m_x1, mat_m_x2, mat_m_x3, mat_m_x4], axis=-2)
 
     mat_l = mat_l[:, np.newaxis, ..., np.newaxis, :]
     mat_r = mat_r[:, np.newaxis, ..., np.newaxis]

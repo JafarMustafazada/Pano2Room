@@ -11,15 +11,23 @@ def get_pixel_grids(height, width, reverse=False):
     # texture coordinate.
     if reverse:
         # Pytorch3D expects +X left and +Y up!!!
-        x_linspace = torch.linspace(width - 1, 0, width).view(1, width).expand(height, width)
-        y_linspace = torch.linspace(height - 1, 0, height).view(height, 1).expand(height, width)
+        x_linspace = (
+            torch.linspace(width - 1, 0, width).view(1, width).expand(height, width)
+        )
+        y_linspace = (
+            torch.linspace(height - 1, 0, height).view(height, 1).expand(height, width)
+        )
     else:
-        x_linspace = torch.linspace(0, width - 1, width).view(1, width).expand(height, width)
-        y_linspace = torch.linspace(0, height - 1, height).view(height, 1).expand(height, width)
+        x_linspace = (
+            torch.linspace(0, width - 1, width).view(1, width).expand(height, width)
+        )
+        y_linspace = (
+            torch.linspace(0, height - 1, height).view(height, 1).expand(height, width)
+        )
     x_coordinates = x_linspace.contiguous().view(-1)
     y_coordinates = y_linspace.contiguous().view(-1)
     ones = torch.ones(height * width)
-    indices_grid = torch.stack([x_coordinates,  y_coordinates, ones], dim=0)
+    indices_grid = torch.stack([x_coordinates, y_coordinates, ones], dim=0)
     return indices_grid
 
 
@@ -47,8 +55,8 @@ def pts_to_image(pts, K, RT):
 
 def Screen_to_NDC(x, H, W):
     sampler = torch.clone(x)
-    sampler[0:1] = (sampler[0:1] / (W -1) * 2.0 -1.0) * (W - 1.0) / (H - 1.0)
-    sampler[1:2] = (sampler[1:2] / (H -1) * 2.0 -1.0)
+    sampler[0:1] = (sampler[0:1] / (W - 1) * 2.0 - 1.0) * (W - 1.0) / (H - 1.0)
+    sampler[1:2] = sampler[1:2] / (H - 1) * 2.0 - 1.0
     return sampler
 
 
@@ -56,13 +64,16 @@ def get_camera(world_to_cam, fov_in_degrees):
     # pytorch3d expects transforms as row-vectors, so flip rotation: https://github.com/facebookresearch/pytorch3d/issues/1183
     R = world_to_cam[:3, :3].t()[None, ...]
     T = world_to_cam[:3, 3][None, ...]
-    camera = FoVPerspectiveCameras(device=world_to_cam.device, R=R, T=T, fov=fov_in_degrees, degrees=True)
+    camera = FoVPerspectiveCameras(
+        device=world_to_cam.device, R=R, T=T, fov=fov_in_degrees, degrees=True
+    )
     # print(camera.get_projection_transform().get_matrix());assert 0
 
     # H,W = 256, 256
     # K = get_pinhole_intrinsics_from_fov(H, W, fov_in_degrees).to(world_to_cam.device)[None]
     # camera = PerspectiveCameras(device=world_to_cam.device, R=R, T=T, in_ndc=False, K=K, image_size=torch.tensor([[H,W]]))
     return camera
+
 
 def unproject_points(world_to_cam, fov_in_degrees, depth, H, W):
     camera = get_camera(world_to_cam, fov_in_degrees)
@@ -73,12 +84,15 @@ def unproject_points(world_to_cam, fov_in_degrees, depth, H, W):
     xy_depth = xy_depth.T
     xy_depth = xy_depth[None]
 
-    world_points = camera.unproject_points(xy_depth, world_coordinates=True, scaled_depth_input=False)
-    #world_points = cameras.unproject_points(xy_depth, world_coordinates=True)
+    world_points = camera.unproject_points(
+        xy_depth, world_coordinates=True, scaled_depth_input=False
+    )
+    # world_points = cameras.unproject_points(xy_depth, world_coordinates=True)
     world_points = world_points[0]
     world_points = world_points.T
 
     return world_points
+
 
 def pixel2uv(pixel, w=1024, h=512, axis=None):
     pixel = pixel.astype(np.float64) if isinstance(pixel, np.ndarray) else pixel.float()
@@ -96,8 +110,13 @@ def pixel2uv(pixel, w=1024, h=512, axis=None):
         assert False, "axis error"
 
     lst = [u, v]
-    uv = np.concatenate(lst, axis=-1) if isinstance(pixel, np.ndarray) else torch.cat(lst, dim=-1)
+    uv = (
+        np.concatenate(lst, axis=-1)
+        if isinstance(pixel, np.ndarray)
+        else torch.cat(lst, dim=-1)
+    )
     return uv
+
 
 def uv2lonlat(uv, axis=None):
     if axis is None:
@@ -113,13 +132,19 @@ def uv2lonlat(uv, axis=None):
         assert False, "axis error"
 
     lst = [lon, lat]
-    lonlat = np.concatenate(lst, axis=-1) if isinstance(uv, np.ndarray) else torch.cat(lst, dim=-1)
+    lonlat = (
+        np.concatenate(lst, axis=-1)
+        if isinstance(uv, np.ndarray)
+        else torch.cat(lst, dim=-1)
+    )
     return lonlat
+
 
 def pixel2lonlat(pixel, w=1024, h=512, axis=None):
     uv = pixel2uv(pixel, w, h, axis)
     lonlat = uv2lonlat(uv, axis)
     return lonlat
+
 
 def unproject_points_distance(distance):
     h = distance.shape[0]
@@ -136,10 +161,17 @@ def unproject_points_distance(distance):
 
 
 def get_pinhole_intrinsics_from_fov(H, W, fov_in_degrees=55.0):
-    px, py = (W - 1) / 2., (H - 1) / 2.
-    fx = fy = W / (2. * np.tan(fov_in_degrees / 360. * np.pi))
-    k_ref = np.array([[fx, 0.0, px, 0.0], [0.0, fy, py, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
-                     dtype=np.float32)
+    px, py = (W - 1) / 2.0, (H - 1) / 2.0
+    fx = fy = W / (2.0 * np.tan(fov_in_degrees / 360.0 * np.pi))
+    k_ref = np.array(
+        [
+            [fx, 0.0, px, 0.0],
+            [0.0, fy, py, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
     k_ref = torch.tensor(k_ref)  # K is [4,4]
 
     return k_ref
@@ -209,7 +241,8 @@ def torch_to_trimesh(vertices, faces, colors):
         vertices=vertices.T.cpu().numpy(),
         faces=faces.T.cpu().numpy(),
         vertex_colors=(colors.T.cpu().numpy() * 255).astype(np.uint8),
-        process=False)
+        process=False,
+    )
 
     return mesh
 
@@ -221,7 +254,9 @@ def trimesh_to_torch(mesh: trimesh.base.Trimesh, v=None, f=None, c=None):
     faces = torch.from_numpy(np.asarray(mesh.faces)).T
     if f is not None:
         faces = faces.to(f)
-    colors = torch.from_numpy(np.asarray(mesh.visual.vertex_colors, dtype=float) / 255).T[:3]
+    colors = torch.from_numpy(
+        np.asarray(mesh.visual.vertex_colors, dtype=float) / 255
+    ).T[:3]
     if c is not None:
         colors = colors.to(c)
     return vertices, faces, colors
@@ -231,5 +266,8 @@ def o3d_to_trimesh(mesh: o3d.geometry.TriangleMesh):
     return trimesh.base.Trimesh(
         vertices=np.asarray(mesh.vertices),
         faces=np.asarray(mesh.triangles),
-        vertex_colors=(np.asarray(mesh.vertex_colors).clip(0, 1) * 255).astype(np.uint8),
-        process=False)
+        vertex_colors=(np.asarray(mesh.vertex_colors).clip(0, 1) * 255).astype(
+            np.uint8
+        ),
+        process=False,
+    )

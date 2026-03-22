@@ -124,9 +124,7 @@ def run(
     # NOTE: we are also assuming that uint8 is in range of 0-255 (obviously)
     # and float is in range of 0.0-1.0; later we will refine it
     # NOTE: for the sake of consistency, we will try to use the same dtype as equi
-    dtype = (
-        np.dtype(np.float32) if src_dtype == np.dtype(np.uint8) else src_dtype
-    )
+    dtype = np.dtype(np.float32) if src_dtype == np.dtype(np.uint8) else src_dtype
     assert dtype in (np.float32, np.float64), (
         f"ERR: argument `dtype` is {dtype} which is incompatible:\n"
         f"try {(np.float32, np.float64)}"
@@ -147,9 +145,7 @@ def run(
     out = np.empty((bs, c, height, width), dtype=dtype)
 
     # create grid and transfrom matrix
-    m = create_normalized_grid(
-        height=height, width=width, batch=bs, dtype=dtype
-    )
+    m = create_normalized_grid(height=height, width=width, batch=bs, dtype=dtype)
     m = m[..., np.newaxis]
 
     # create batched rotation matrices
@@ -163,9 +159,7 @@ def run(
 
     # grid sample
     if override_func is not None:
-        out = override_func(  # type: ignore
-            img=src, grid=grid, out=out, mode=mode
-        )
+        out = override_func(img=src, grid=grid, out=out, mode=mode)  # type: ignore
     else:
         out = numpy_grid_sample(img=src, grid=grid, out=out, mode=mode)
 

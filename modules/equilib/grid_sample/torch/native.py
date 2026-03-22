@@ -41,9 +41,7 @@ def native(
 
     """
 
-    assert (
-        grid.dtype == img.dtype
-    ), "ERR: img and grid should have the same dtype"
+    assert grid.dtype == img.dtype, "ERR: img and grid should have the same dtype"
 
     _, _, h, w = img.shape
 
@@ -88,7 +86,7 @@ def native(
         # padding mode defaults to 'zeros' and there is no 'wrapping' mode
         padding_mode="reflection",
     )
-    
+
     return out
 
 

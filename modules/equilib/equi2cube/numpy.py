@@ -47,16 +47,14 @@ def cube_h2dice(cube_h: np.ndarray) -> np.ndarray:
     cube_list = cube_hsplits(cube_h)
 
     w = cube_h.shape[-2]
-    cube_dice = np.zeros(
-        (bs, cube_h.shape[-3], w * 3, w * 4), dtype=cube_h.dtype
-    )
+    cube_dice = np.zeros((bs, cube_h.shape[-3], w * 3, w * 4), dtype=cube_h.dtype)
     # Order: F R B L U D
     sxy = [(1, 1), (2, 1), (3, 1), (0, 1), (1, 0), (1, 2)]
     for b in range(bs):
         for i, (sx, sy) in enumerate(sxy):
-            cube_dice[
-                b, :, sy * w : (sy + 1) * w, sx * w : (sx + 1) * w
-            ] = deepcopy(cube_list[i][b, ...])
+            cube_dice[b, :, sy * w : (sy + 1) * w, sx * w : (sx + 1) * w] = deepcopy(
+                cube_list[i][b, ...]
+            )
 
     return cube_dice
 
@@ -165,9 +163,7 @@ def run(
     # NOTE: we are also assuming that uint8 is in range of 0-255 (obviously)
     # and float is in range of 0.0-1.0; later we will refine it
     # NOTE: for the sake of consistency, we will try to use the same dtype as equi
-    dtype = (
-        np.dtype(np.float32) if equi_dtype == np.dtype(np.uint8) else equi_dtype
-    )
+    dtype = np.dtype(np.float32) if equi_dtype == np.dtype(np.uint8) else equi_dtype
     assert dtype in (np.float32, np.float64), (
         f"ERR: argument `dtype` is {dtype} which is incompatible:\n"
         f"try {(np.float32, np.float64)}"
@@ -197,9 +193,7 @@ def run(
 
     # grid sample
     if override_func is not None:
-        out = override_func(  # type: ignore
-            img=equi, grid=grid, out=out, mode=mode
-        )
+        out = override_func(img=equi, grid=grid, out=out, mode=mode)  # type: ignore
     else:
         out = numpy_grid_sample(img=equi, grid=grid, out=out, mode=mode)
 

@@ -44,9 +44,7 @@ def dict2horizon(dicts: List[Dict[str, torch.Tensor]]) -> torch.Tensor:
     c, _, w = dicts[0][face_key[0]].shape
     dtype = dicts[0][face_key[0]].dtype
     device = get_device(dicts[0][face_key[0]])
-    horizons = torch.empty(
-        (len(dicts), c, w, w * 6), dtype=dtype, device=device
-    )
+    horizons = torch.empty((len(dicts), c, w, w * 6), dtype=dtype, device=device)
     for b, cube in enumerate(dicts):
         horizons[b, ...] = single_list2horizon([cube[k] for k in face_key])
     return horizons
@@ -57,9 +55,7 @@ def list2horizon(lists: List[List[torch.Tensor]]) -> torch.Tensor:
     c, w, _ = lists[0][0].shape
     dtype = lists[0][0].dtype
     device = get_device(lists[0][0])
-    horizons = torch.empty(
-        (len(lists), c, w, w * 6), dtype=dtype, device=device
-    )
+    horizons = torch.empty((len(lists), c, w, w * 6), dtype=dtype, device=device)
     for b, cube in enumerate(lists):
         horizons[b, ...] = single_list2horizon(cube)
     return horizons
@@ -155,9 +151,7 @@ def _equirect_facetype(h: int, w: int) -> torch.Tensor:
     # Prepare ceil mask
     mask = torch.zeros((h, w // 4), dtype=torch.bool)
     idx = torch.linspace(-(math.pi * w_ratio), math.pi * w_ratio, w // 4) / 4
-    idx = h // 2 - torch.round(
-        torch.atan(torch.cos(idx)) * h / (math.pi * h_ratio)
-    )
+    idx = h // 2 - torch.round(torch.atan(torch.cos(idx)) * h / (math.pi * h_ratio))
     idx = idx.type(int_dtype)
     for i, j in enumerate(idx):
         mask[:j, i] = 1
@@ -211,9 +205,7 @@ def create_equi_grid(
         if i < 4:
             coor_x[mask] = 0.5 * torch.tan(theta[mask] - math.pi * i / 2)
             coor_y[mask] = (
-                -0.5
-                * torch.tan(phi[mask])
-                / torch.cos(theta[mask] - math.pi * i / 2)
+                -0.5 * torch.tan(phi[mask]) / torch.cos(theta[mask] - math.pi * i / 2)
             )
         elif i == 4:
             c = 0.5 * torch.tan(math.pi / 2 - phi[mask])
@@ -225,12 +217,8 @@ def create_equi_grid(
             coor_y[mask] = -c * torch.cos(theta[mask])
 
     # Final renormalize
-    coor_x = torch.clamp(
-        torch.clamp(coor_x + 0.5, 0, 1) * w_face, 0, w_face - 1
-    )
-    coor_y = torch.clamp(
-        torch.clamp(coor_y + 0.5, 0, 1) * w_face, 0, w_face - 1
-    )
+    coor_x = torch.clamp(torch.clamp(coor_x + 0.5, 0, 1) * w_face, 0, w_face - 1)
+    coor_y = torch.clamp(torch.clamp(coor_y + 0.5, 0, 1) * w_face, 0, w_face - 1)
 
     # change x axis of the x coordinate map
     for i in range(6):
@@ -313,9 +301,7 @@ def run(
         # NOTE: don't need to initilaize for `native`
         out = None
     else:
-        out = torch.empty(
-            (bs, c, height, width), dtype=dtype, device=horizon_device
-        )
+        out = torch.empty((bs, c, height, width), dtype=dtype, device=horizon_device)
 
     # FIXME: for now, calculate the grid in cpu
     # I need to benchmark performance of it when grid is created on cuda
@@ -343,9 +329,7 @@ def run(
         grid = grid.to(horizon.device)
 
     # grid sample
-    out = torch_grid_sample(
-        img=horizon, grid=grid, out=out, mode=mode, backend=backend
-    )
+    out = torch_grid_sample(img=horizon, grid=grid, out=out, mode=mode, backend=backend)
 
     out = (
         out.type(horizon_dtype)

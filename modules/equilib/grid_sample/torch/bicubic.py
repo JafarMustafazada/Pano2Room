@@ -14,17 +14,12 @@ def kernel(s, a):
     mask2 = torch.logical_and(1 < s, s <= 2)
     out[mask1] = (a + 2) * (s[mask1] ** 3) - (a + 3) * (s[mask1] ** 2) + 1
     out[mask2] = (
-        a * (s[mask2] ** 3)
-        - (5 * a) * (s[mask2] ** 2)
-        + (8 * a) * s[mask2]
-        - 4 * a
+        a * (s[mask2] ** 3) - (5 * a) * (s[mask2] ** 2) + (8 * a) * s[mask2] - 4 * a
     )
     return out
 
 
-def bicubic(
-    img: torch.Tensor, grid: torch.Tensor, out: torch.Tensor
-) -> torch.Tensor:
+def bicubic(img: torch.Tensor, grid: torch.Tensor, out: torch.Tensor) -> torch.Tensor:
 
     # FIXME: out being initialized doesn't really matter?
 
@@ -70,9 +65,7 @@ def bicubic(
         [k1[:, 0, ...], k2[:, 0, ...], k3[:, 0, ...], k4[:, 0, ...]], dim=-1
     ).to(device)
 
-    mat_m = torch.empty(
-        (b_out, c_in, h_out, w_out, 4, 4), dtype=dtype, device=device
-    )
+    mat_m = torch.empty((b_out, c_in, h_out, w_out, 4, 4), dtype=dtype, device=device)
     for b in range(b_out):
         y1 = c1[b, 0, ...]  # (h, w)
         y2 = c2[b, 0, ...]
@@ -121,9 +114,7 @@ def bicubic(
             dim=-1,
         )
 
-        mat_m[b, ...] = torch.stack(
-            [mat_m_x1, mat_m_x2, mat_m_x3, mat_m_x4], dim=-2
-        )
+        mat_m[b, ...] = torch.stack([mat_m_x1, mat_m_x2, mat_m_x3, mat_m_x4], dim=-2)
 
     mat_l = mat_l.unsqueeze(1).unsqueeze(-2)
     mat_r = mat_r.unsqueeze(1).unsqueeze(-1)

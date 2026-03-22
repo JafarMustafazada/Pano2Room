@@ -5,12 +5,14 @@ import types
 import math
 import torch.nn.functional as F
 
+
 def unflatten_with_named_tensor(input, dim, sizes):
     """Workaround for unflattening with named tensor."""
     # tracer acts up with unflatten. See https://github.com/pytorch/pytorch/issues/49538
-    new_shape = list(input.shape)[:dim] + list(sizes) + list(input.shape)[dim+1:]
+    new_shape = list(input.shape)[:dim] + list(sizes) + list(input.shape)[dim + 1 :]
     return input.view(*new_shape)
-    
+
+
 class Slice(nn.Module):
     def __init__(self, start_index=1):
         super(Slice, self).__init__()
@@ -73,23 +75,25 @@ def forward_vit(pretrained, x):
     layer_3 = pretrained.act_postprocess3[0:2](layer_3)
     layer_4 = pretrained.act_postprocess4[0:2](layer_4)
 
-
     unflattened_dim = 2
     unflattened_size = (
-        int(torch.div(h, pretrained.model.patch_size[1], rounding_mode='floor')),
-        int(torch.div(w, pretrained.model.patch_size[0], rounding_mode='floor')),
+        int(torch.div(h, pretrained.model.patch_size[1], rounding_mode="floor")),
+        int(torch.div(w, pretrained.model.patch_size[0], rounding_mode="floor")),
     )
     unflatten = nn.Sequential(nn.Unflatten(unflattened_dim, unflattened_size))
-    
 
     if layer_1.ndim == 3:
         layer_1 = unflatten(layer_1)
     if layer_2.ndim == 3:
         layer_2 = unflatten(layer_2)
     if layer_3.ndim == 3:
-        layer_3 = unflatten_with_named_tensor(layer_3, unflattened_dim, unflattened_size)
+        layer_3 = unflatten_with_named_tensor(
+            layer_3, unflattened_dim, unflattened_size
+        )
     if layer_4.ndim == 3:
-        layer_4 = unflatten_with_named_tensor(layer_4, unflattened_dim, unflattened_size)
+        layer_4 = unflatten_with_named_tensor(
+            layer_4, unflattened_dim, unflattened_size
+        )
 
     layer_1 = pretrained.act_postprocess1[3 : len(pretrained.act_postprocess1)](layer_1)
     layer_2 = pretrained.act_postprocess2[3 : len(pretrained.act_postprocess2)](layer_2)
@@ -120,7 +124,9 @@ def forward_flex(self, x):
     b, c, h, w = x.shape
 
     pos_embed = self._resize_pos_embed(
-        self.pos_embed, torch.div(h, self.patch_size[1], rounding_mode='floor'), torch.div(w, self.patch_size[0], rounding_mode='floor')
+        self.pos_embed,
+        torch.div(h, self.patch_size[1], rounding_mode="floor"),
+        torch.div(w, self.patch_size[0], rounding_mode="floor"),
     )
 
     B = x.shape[0]
