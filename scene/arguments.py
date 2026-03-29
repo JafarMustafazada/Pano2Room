@@ -30,7 +30,7 @@ class GSParams:
         self.densification_interval = 100
         self.opacity_reset_interval = 999999  # 3000
         self.densify_from_iter = 500
-        self.densify_until_iter = 15_000
+        self.densify_until_iter = 2800  #  15_000
         self.densify_grad_threshold = 0.0002
 
         self.convert_SHs_python = False

@@ -85,6 +85,7 @@ class PanoJointPredictor(GeoPredictor):
         self.depth_predictor = OmnidataPredictor()
         self.normal_predictor = OmnidataNormalPredictor()
         self.save_path = save_path
+        self._sphere_field_cache = None
 
     def grads_to_normal(self, grads):
         height, width, _ = grads.shape
@@ -250,9 +251,17 @@ class PanoJointPredictor(GeoPredictor):
             [n_pers, 3, 128, 128], requires_grad=True
         )
 
+        # CHANGE: warm-start from previous field if available; was always cold-starting
+        sp_dis_field = SphereDistanceField()
+        if self._sphere_field_cache is not None:
+            try:
+                sp_dis_field.load_state_dict(self._sphere_field_cache)
+            except Exception:
+                pass
+
         # Optimize global parameters
         sp_dis_field = SphereDistanceField()
-        all_iter_steps = 2000
+        all_iter_steps = 400  # 2000
         lr_alpha = 1e-2
         init_lr = 1e-1
         init_lr_sp = 1e-2
@@ -414,4 +423,92 @@ class PanoJointPredictor(GeoPredictor):
         new_distances = new_distances.detach().reshape(height, width, 1)
         new_normals = self.grads_to_normal(new_grads.detach().reshape(height, width, 3))
 
+        # save field state for next viewpoint's warm-start
+        self._sphere_field_cache = {
+            k: v.detach().cpu().clone() for k, v in sp_dis_field.state_dict().items()
+        }
+
         return new_distances, new_normals
+
+
+# results with artifacts
+class PanoJointPredictor2(GeoPredictor):
+    def __init__(self, save_path=None):
+        super().__init__()
+        # Depth Anything V2 Large — metric indoor model
+        self.depth_model = (
+            AutoModelForDepthEstimation.from_pretrained(
+                "depth-anything/Depth-Anything-V2-Large-hf"
+            )
+            .cuda()
+            .half()
+            .eval()
+        )
+        self.normal_predictor = OmnidataNormalPredictor()  # keep for normals
+        self.save_path = save_path
+        self.last_field = None
+
+    @torch.no_grad()
+    def __call__(self, key, img, ref_distance, mask, **kwargs):
+        # img: [H, W, 3] float32 in [0,1], on cuda
+        H, W, _ = img.shape
+
+        # Run depth prediction on the full panorama (DA-V2 handles non-perspective)
+        img_u8 = (img.cpu().numpy() * 255).astype("uint8")
+        from PIL import Image as PILImage
+        from transformers import AutoImageProcessor
+
+        processor = AutoImageProcessor.from_pretrained(
+            "depth-anything/Depth-Anything-V2-Large-hf"
+        )
+
+        inputs = processor(images=PILImage.fromarray(img_u8), return_tensors="pt")
+        inputs = {k: v.cuda().half() for k, v in inputs.items()}
+
+        outputs = self.depth_model(**inputs)
+        pred_depth = outputs.predicted_depth  # [1, H', W']
+
+        # Resize to panorama resolution
+        pred_depth = F.interpolate(
+            pred_depth.unsqueeze(1).float(),
+            size=(H, W),
+            mode="bilinear",
+            align_corners=False,
+        )
+        pred_depth = pred_depth.squeeze()
+
+        r_idx = torch.arange(H, device=pred_depth.device, dtype=torch.float32)
+        c_idx = torch.arange(W, device=pred_depth.device, dtype=torch.float32)
+        # Normalised to [0,1] then mapped to angles
+        v = r_idx / H  # 0 = top row, 1 = bottom row
+        u = c_idx / W  # 0 = left col, 1 = right col
+        azimuth = 2.0 * torch.pi * (u - 0.5)  # φ  ∈ [-π,  π]
+        elevation = torch.pi * (0.5 - v)  # ε  ∈ [-π/2, π/2]
+        elev_grid, azim_grid = torch.meshgrid(elevation, azimuth, indexing="ij")
+        cos_angle = torch.cos(elev_grid) * torch.cos(azim_grid)  # shape [H, W]
+        cos_angle = cos_angle.clamp(min=0.08)
+        pred_depth = pred_depth / cos_angle
+
+        # Scale-align to rendered reference depth in non-masked regions
+        known_mask = mask.squeeze() < 0.5
+        if known_mask.sum() > 100:
+            ref = ref_distance.squeeze()[known_mask]
+            pred = pred_depth[known_mask]
+            scale = (ref * pred).sum() / (pred * pred).sum().clamp(min=1e-6)
+            pred_depth = pred_depth * scale
+
+        # Keep rendered depth in known regions; use predicted in inpainted regions
+        inpaint_mask = mask.squeeze() > 0.5
+        final_depth = ref_distance.squeeze().clone()
+        final_depth[inpaint_mask] = pred_depth[inpaint_mask]
+
+        # Normals from a single perspective crop centred on the inpainted region
+        # (simplified — use Omnidata on the inpainted panorama crop)
+        img_chw = img.permute(2, 0, 1).unsqueeze(0)
+        pred_normals = self.normal_predictor.predict_normal(img_chw)
+        pred_normals = F.interpolate(
+            pred_normals, size=(H, W), mode="bilinear", align_corners=False
+        )
+        pred_normals = pred_normals.squeeze(0).permute(1, 2, 0) * 2.0 - 1.0
+
+        return final_depth.unsqueeze(-1), pred_normals

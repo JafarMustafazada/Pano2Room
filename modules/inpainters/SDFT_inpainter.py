@@ -2,7 +2,7 @@ import utils.functions as functions
 import torch
 from .inpainter import Inpainter
 from PIL import Image
-from diffusers import StableDiffusionInpaintPipeline
+from diffusers import StableDiffusionInpaintPipeline, LCMScheduler
 import numpy as np
 import os
 
@@ -15,6 +15,9 @@ class SDFTInpainter(Inpainter):
         pipe = StableDiffusionInpaintPipeline.from_pretrained(
             SD_path, torch_dtype=torch.float16, variant="fp16"
         ).to("cuda")
+
+        # swaping PNDM with LCM scheduler for 4-step inference (was 30 steps)
+        pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
 
         SDFT_path = f"output/SDFT_weights"
         if os.path.exists(SDFT_path):
@@ -41,8 +44,8 @@ class SDFTInpainter(Inpainter):
             prompt=prompt,
             image=rendered_image_pil,
             mask_image=inpaint_mask_pil,
-            guidance_scale=7.5,
-            num_inference_steps=30,
+            guidance_scale=1.5,  # 7.5,
+            num_inference_steps=4,  # 30,
             generator=generator,
         ).images[0]
         result = functions.pil_to_tensor(inpainted_image_pil)

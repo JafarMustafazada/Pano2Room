@@ -14,19 +14,28 @@ from .transforms import get_transform
 class OmnidataNormalPredictor(GeoPredictor):
     def __init__(self):
         super().__init__()
+        self.device = torch.device("cuda")  # CHANGE: always load to gpu
+
         self.img_size = 384
         ckpt_path = "./checkpoints/omnidata_dpt_normal_v2.ckpt"
         self.model = DPTDepthModel(backbone="vitb_rn50_384", num_channels=3)
-        self.model.to(torch.device("cpu"))
+
+        # self.model.to(torch.device('cpu'))
         checkpoint = torch.load(ckpt_path, map_location=torch.device("cpu"))
+
+        # self.model.to(self.device)
+        # checkpoint = torch.load(ckpt_path, map_location=self.device)
+
         if "state_dict" in checkpoint:
             state_dict = {}
             for k, v in checkpoint["state_dict"].items():
                 state_dict[k[6:]] = v
         else:
             state_dict = checkpoint
-
         self.model.load_state_dict(state_dict)
+
+        self.model.cuda().half().eval()
+
         self.trans_totensor = transforms.Compose(
             [
                 transforms.Resize(self.img_size, interpolation=Image.BILINEAR),
@@ -36,6 +45,15 @@ class OmnidataNormalPredictor(GeoPredictor):
         )
 
     def predict_normal(self, img):
+        with torch.cuda.amp.autocast():
+            img_tensor = self.trans_totensor(img.half())
+            output = self.model(img_tensor).float()
+        output = F.interpolate(output, size=(512, 512), mode="bicubic")
+        return output
+        img_tensor = self.trans_totensor(img).to(self.device)
+        output = self.model(img_tensor)
+        output = F.interpolate(output, size=(512, 512), mode="bicubic")
+        return output
         self.model.to(torch.device("cuda"))
         img_tensor = self.trans_totensor(img)
         output = self.model(img_tensor)

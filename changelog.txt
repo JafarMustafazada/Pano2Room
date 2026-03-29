@@ -1,0 +1,8 @@
+Changelog
+j.2
+====
+ - j.2.5  arguments.py: Changed arguments
+ - j.2.4  SDFT_inpainter.py: Changed PNDM (30 steps) to LCM (4 steps)
+ - j.2.3  omnidata_*predictor.py: Changed to always cuda, no more cpu-gpu ping pong (16gb vram recommended)
+ - j.2.2  pano_joint_predictor.py: Added warm start, panoJointPredictor2, Changed global parametrs
+ - j.2.1  pano2room.py: Added simplify_mesh, caching on greedy_search, Fixed loop copy, torch.max bottleneck and size_threshold in train_gs

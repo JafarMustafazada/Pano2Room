@@ -4,6 +4,8 @@ checkpoints/omnidata_dpt_normal_v2.ckpt
 
 pano2room.py.lprof
 
+testing1/*
+
 input/*_input_panorama.png
 output/
 

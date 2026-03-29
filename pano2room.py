@@ -251,7 +251,180 @@ class Pano2RoomPipeline(torch.nn.Module):
             key += 1
         return pose_dict
 
+    def simplify_mesh(self, target_faces: int = 300_000):
+        """Quadric-decimation simplification. Operates in-place on self.vertices/faces/colors."""
+        current_faces = self.faces.shape[1]
+        if current_faces <= target_faces:
+            return
+        import open3d as o3d
+        import numpy as np
+
+        # Tensors are stored as 3×N; convert to N×3 for Open3D
+        v = self.vertices.T.detach().cpu().numpy().astype(np.float64)
+        f = self.faces.T.detach().cpu().numpy().astype(np.int32)
+        c = (
+            self.colors.T.detach()
+            .cpu()
+            .float()
+            .numpy()
+            .clip(0.0, 1.0)
+            .astype(np.float64)
+        )
+
+        mesh_o3d = o3d.geometry.TriangleMesh()
+        mesh_o3d.vertices = o3d.utility.Vector3dVector(v)
+        mesh_o3d.triangles = o3d.utility.Vector3iVector(f)
+        mesh_o3d.vertex_colors = o3d.utility.Vector3dVector(c)
+
+        mesh_o3d = mesh_o3d.simplify_quadric_decimation(
+            target_number_of_triangles=target_faces
+        )
+
+        v_new = np.asarray(mesh_o3d.vertices, dtype=np.float32)
+        f_new = np.asarray(mesh_o3d.triangles, dtype=np.int64)
+        c_new = np.asarray(mesh_o3d.vertex_colors, dtype=np.float32)
+
+        # Back to 3×N tensors on GPU
+        self.vertices = torch.from_numpy(v_new.T).to(self.device)
+        self.faces = torch.from_numpy(f_new.T).to(self.device)
+        self.colors = torch.from_numpy(c_new.T).to(self.device)
+        print(f"[simplify_mesh] {current_faces:,} → {self.faces.shape[1]:,} faces")
+
     def stage_inpaint_pano_greedy_search(self, pose_dict):
+        print("stage_inpaint_pano_greedy_search")
+        pano_rgb, pano_distance, pano_mask = self.render_pano(self.world_to_cam)
+
+        inpainted_panos_and_poses = []
+        loop_iter = 0
+
+        #  CHANGE: pre-score all poses ONCE instead of every iteration
+        print(f"Pre-scoring {len(pose_dict)} poses...")
+        score_cache = {}
+        for key, pose in pose_dict.items():
+            _, _, m = self.render_pano(pose.cuda())
+            score_cache[key] = float(torch.sum(1.0 - m.float()) / m.numel())
+            torch.cuda.empty_cache()
+        RESCORE_FRACTION = 0.3  # re-score this fraction of remaining poses per step
+
+        while len(pose_dict) > 0:
+            print(f"len(pose_dict):{len(pose_dict)}")
+
+            #  CHANGE: sort from cache — zero render calls here
+            values_sampled_poses = sorted(
+                [(k, score_cache[k], pose_dict[k]) for k in pose_dict],
+                key=lambda item: item[1],
+            )
+            if not values_sampled_poses:
+                break
+
+            least_complete_view = values_sampled_poses[
+                len(values_sampled_poses) * 2 // 3
+            ]
+            key, view_completeness, pose = least_complete_view
+            print(f"least_complete_view:{view_completeness}")
+            del pose_dict[key]
+            del score_cache[key]
+            #  end cache lookup
+
+            # rendering rgb depth mask
+            pano_rgb, pano_distance, pano_mask = self.render_pano(pose.cuda())
+
+            # inpaint pano
+            colors = pano_rgb.permute(1, 2, 0).clone()
+            distances = pano_distance.unsqueeze(-1).clone()
+            pano_inpaint_mask = pano_mask.clone()
+
+            if pano_inpaint_mask.min().item() < 0.5:
+                colors, distances, normals = self.inpaint_new_panorama(
+                    idx=key,
+                    colors=colors,
+                    distances=distances,
+                    pano_mask=pano_inpaint_mask,
+                )
+
+                # apply_GeoCheck
+                perf_pose = pose.clone()
+                perf_pose[0, 3], perf_pose[1, 3], perf_pose[2, 3] = (
+                    -pose[0, 3],
+                    pose[2, 3],
+                    0,
+                )
+                rays = gen_pano_rays(perf_pose, self.pano_height, self.pano_width)
+                conflict_mask = self.sup_pool.geo_check(rays, distances.unsqueeze(-1))
+                pano_inpaint_mask = pano_inpaint_mask * conflict_mask
+
+            # add new mesh
+            self.pano_distance_to_mesh(
+                colors.permute(2, 0, 1), distances, pano_inpaint_mask, pose=pose
+            )
+
+            #  CHANGE: simplify mesh every 3 iterations
+            loop_iter += 1
+            if loop_iter % 3 == 0:
+                self.simplify_mesh(target_faces=300_000)
+            #  end
+
+            # apply_GeoCheck register
+            sup_mask = pano_inpaint_mask.clone()
+            self.sup_pool.register_sup_info(
+                pose=perf_pose,
+                mask=sup_mask,
+                rgb=colors,
+                distance=distances.unsqueeze(-1),
+                normal=normals,
+            )
+
+            #  CHANGE: partial re-score after mesh update
+            remaining_keys = list(pose_dict.keys())
+            if remaining_keys:
+                n_rescore = max(1, int(len(remaining_keys) * RESCORE_FRACTION))
+                rescore_keys = np.random.choice(
+                    remaining_keys, n_rescore, replace=False
+                )
+                for rkey in rescore_keys:
+                    _, _, m = self.render_pano(pose_dict[rkey].cuda())
+                    score_cache[rkey] = float(torch.sum(1.0 - m.float()) / m.numel())
+                    torch.cuda.empty_cache()
+            #  end
+
+            # save rendered
+            panorama_tensor_pil = functions.tensor_to_pil(pano_rgb.unsqueeze(0))
+            panorama_tensor_pil.save(f"{self.save_path}/renderred_pano_{key}.png")
+            if self.save_details:
+                depth_pil = Image.fromarray(
+                    colorize_single_channel_image(
+                        pano_distance.unsqueeze(0) / self.scene_depth_max
+                    )
+                )
+                depth_pil.save(f"{self.save_path}/renderred_depth_{key}.png")
+                inpaint_mask_pil = Image.fromarray(
+                    pano_mask.detach().cpu().squeeze().float().numpy() * 255
+                ).convert("RGB")
+                inpaint_mask_pil.save(f"{self.save_path}/mask_{key}.png")
+                inpaint_mask_pil = Image.fromarray(
+                    pano_inpaint_mask.detach().cpu().squeeze().float().numpy() * 255
+                ).convert("RGB")
+                inpaint_mask_pil.save(f"{self.save_path}/inpaint_mask_{key}.png")
+
+            # save inpainted
+            panorama_tensor_pil = functions.tensor_to_pil(
+                colors.permute(2, 0, 1).unsqueeze(0)
+            )
+            panorama_tensor_pil.save(f"{self.save_path}/inpainted_pano_{key}.png")
+            depth_pil = Image.fromarray(
+                colorize_single_channel_image(
+                    distances.unsqueeze(0) / self.scene_depth_max
+                )
+            )
+            depth_pil.save(f"{self.save_path}/inpainted_depth_{key}.png")
+
+            inpainted_panos_and_poses += [
+                (colors.permute(2, 0, 1).unsqueeze(0), pose.clone())
+            ]
+
+        return inpainted_panos_and_poses
+
+    def stage_inpaint_pano_greedy_search_old(self, pose_dict):
         print("stage_inpaint_pano_greedy_search")
         pano_rgb, pano_distance, pano_mask = self.render_pano(self.world_to_cam)
 
@@ -527,13 +700,18 @@ class Pano2RoomPipeline(torch.nn.Module):
             raise ("Build 3D Scene First!")
 
         iterable_gauss = range(1, self.opt.iterations + 1)
+        viewpoint_stack = self.scene.getTrainCameras().copy()
+        num_cameras = len(viewpoint_stack)
+
+        for cam, _ in viewpoint_stack:
+            if not cam.original_image.is_cuda:
+                cam.original_image = cam.original_image.cuda(non_blocking=True)
 
         for iteration in iterable_gauss:
             self.gaussians.update_learning_rate(iteration)
 
             # Pick a random Camera
-            viewpoint_stack = self.scene.getTrainCameras().copy()
-            viewpoint_cam, mesh_pose = viewpoint_stack[iteration % len(viewpoint_stack)]
+            viewpoint_cam, mesh_pose = viewpoint_stack[iteration % num_cameras]
 
             # Render GS
             render_pkg = render(
@@ -547,7 +725,8 @@ class Pano2RoomPipeline(torch.nn.Module):
             )
 
             # Loss
-            gt_image = viewpoint_cam.original_image.cuda()
+            # gt_image = viewpoint_cam.original_image.cuda()
+            gt_image = viewpoint_cam.original_image
             Ll1 = l1_loss(render_image, gt_image)
             loss = (1.0 - self.opt.lambda_dssim) * Ll1 + self.opt.lambda_dssim * (
                 1.0 - ssim(render_image, gt_image)
@@ -556,34 +735,41 @@ class Pano2RoomPipeline(torch.nn.Module):
 
             if iteration % 200 == 0:
                 print("[PANOPROG] iter =", iteration, "/ 3000")
-            if self.save_details:
-                functions.write_image(
-                    f"{self.save_path}/Train_Ref_rgb_{iteration}.png",
-                    gt_image.squeeze(0)
-                    .permute(1, 2, 0)
-                    .detach()
-                    .cpu()
-                    .numpy()
-                    .clip(0, 1)
-                    * 255.0,
-                )
-                functions.write_image(
-                    f"{self.save_path}/Train_GS_rgb_{iteration}.png",
-                    render_image.squeeze(0)
-                    .permute(1, 2, 0)
-                    .detach()
-                    .cpu()
-                    .numpy()
-                    .clip(0, 1)
-                    * 255.0,
-                )
+
+                if self.save_details:
+                    functions.write_image(
+                        f"{self.save_path}/Train_Ref_rgb_{iteration}.png",
+                        gt_image.squeeze(0)
+                        .permute(1, 2, 0)
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        .clip(0, 1)
+                        * 255.0,
+                    )
+                    functions.write_image(
+                        f"{self.save_path}/Train_GS_rgb_{iteration}.png",
+                        render_image.squeeze(0)
+                        .permute(1, 2, 0)
+                        .detach()
+                        .cpu()
+                        .numpy()
+                        .clip(0, 1)
+                        * 255.0,
+                    )
 
             with torch.no_grad():
                 # Densification
                 if iteration < self.opt.densify_until_iter:
-                    self.gaussians.max_radii2D[visibility_filter] = torch.max(
-                        self.gaussians.max_radii2D[visibility_filter],
-                        radii[visibility_filter],
+                    # massive bottleneck part:
+                    # self.gaussians.max_radii2D[visibility_filter] = torch.max(
+                    #     self.gaussians.max_radii2D[visibility_filter],
+                    #     radii[visibility_filter],
+                    # )
+                    self.gaussians.max_radii2D = torch.where(
+                        visibility_filter,
+                        torch.max(self.gaussians.max_radii2D, radii),
+                        self.gaussians.max_radii2D,
                     )
                     self.gaussians.add_densification_stats(
                         viewspace_point_tensor, visibility_filter
@@ -594,7 +780,7 @@ class Pano2RoomPipeline(torch.nn.Module):
                         and iteration % self.opt.densification_interval == 0
                     ):
                         size_threshold = (
-                            20 if iteration > self.opt.opacity_reset_interval else None
+                            20 if iteration > self.opt.densify_from_iter else None
                         )
                         self.gaussians.densify_and_prune(
                             self.opt.densify_grad_threshold,
@@ -651,6 +837,32 @@ class Pano2RoomPipeline(torch.nn.Module):
         write_video(f"{self.save_path}/GS_depth_video.mp4", depthlist[6:], fps=30)
         print("Result saved at: ", self.save_path)
 
+    def save_mesh(self, path_without_extension: str):
+        """Save the accumulated mesh as OBJ + MTL (vertex colours via trimesh)."""
+        import trimesh
+        import numpy as np
+
+        v = self.vertices.T.detach().cpu().numpy().astype(np.float64)  # N×3
+        f = self.faces.T.detach().cpu().numpy().astype(np.int64)  # M×3
+        c = self.colors.T.detach().cpu().float().numpy().clip(0.0, 1.0)  # N×3
+        c_uint8 = (c * 255).astype(np.uint8)
+        # trimesh expects RGBA vertex colours
+        rgba = np.concatenate(
+            [c_uint8, np.full((len(c_uint8), 1), 255, np.uint8)], axis=1
+        )
+
+        mesh = trimesh.Trimesh(
+            vertices=v,
+            faces=f,
+            vertex_colors=rgba,
+            process=False,  # skip re-merging, we already cleaned it
+        )
+
+        obj_path = path_without_extension + ".obj"
+        mesh.export(obj_path)
+        print(f"[save_mesh] saved {len(v):,} vertices, {len(f):,} faces → {obj_path}")
+        return obj_path
+
     def run(self):
         torch.set_default_tensor_type("torch.cuda.FloatTensor")
         self.pano_pose, self.poses = self.load_camera_poses(self.pano_center_offset)
@@ -683,6 +895,8 @@ class Pano2RoomPipeline(torch.nn.Module):
         pose_dict = self.load_inpaint_poses()
         print(f"start inpainting with poses #{len(self.poses)}")
         inpainted_panos_and_poses = self.stage_inpaint_pano_greedy_search(pose_dict)
+
+        self.save_mesh(os.path.join(self.save_path, "scene_mesh"))
 
         # Train 3DGS
         self.opt = GSParams()
